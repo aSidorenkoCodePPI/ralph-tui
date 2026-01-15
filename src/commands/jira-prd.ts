@@ -204,17 +204,22 @@ function parseLinkedIssues(issueObj: Record<string, unknown>): JiraLinkedIssue[]
 
     // Handle inward link (another issue points to us)
     if (inwardIssue && typeof inwardIssue.key === 'string') {
+      const fields = inwardIssue.fields as Record<string, unknown> | undefined;
+      const issuetype = fields?.issuetype as Record<string, unknown> | undefined;
+      const status = fields?.status as Record<string, unknown> | undefined;
+      const priority = fields?.priority as Record<string, unknown> | undefined;
+      
       linkedIssues.push({
         issue: {
           key: String(inwardIssue.key),
-          summary: String(inwardIssue.fields?.summary ?? inwardIssue.summary ?? ''),
-          type: String(inwardIssue.fields?.issuetype?.name ?? inwardIssue.type ?? 'Unknown'),
-          status: String(inwardIssue.fields?.status?.name ?? inwardIssue.status ?? 'Unknown'),
-          priority: inwardIssue.fields?.priority?.name
-            ? String(inwardIssue.fields.priority.name)
+          summary: String(fields?.summary ?? inwardIssue.summary ?? ''),
+          type: String(issuetype?.name ?? inwardIssue.type ?? 'Unknown'),
+          status: String(status?.name ?? inwardIssue.status ?? 'Unknown'),
+          priority: priority?.name
+            ? String(priority.name)
             : inwardIssue.priority ? String(inwardIssue.priority) : undefined,
-          description: inwardIssue.fields?.description
-            ? String(inwardIssue.fields.description)
+          description: fields?.description
+            ? String(fields.description)
             : inwardIssue.description ? String(inwardIssue.description) : undefined,
         },
         linkType: normalizedType,
@@ -224,17 +229,22 @@ function parseLinkedIssues(issueObj: Record<string, unknown>): JiraLinkedIssue[]
 
     // Handle outward link (we point to another issue)
     if (outwardIssue && typeof outwardIssue.key === 'string') {
+      const fields = outwardIssue.fields as Record<string, unknown> | undefined;
+      const issuetype = fields?.issuetype as Record<string, unknown> | undefined;
+      const status = fields?.status as Record<string, unknown> | undefined;
+      const priority = fields?.priority as Record<string, unknown> | undefined;
+      
       linkedIssues.push({
         issue: {
           key: String(outwardIssue.key),
-          summary: String(outwardIssue.fields?.summary ?? outwardIssue.summary ?? ''),
-          type: String(outwardIssue.fields?.issuetype?.name ?? outwardIssue.type ?? 'Unknown'),
-          status: String(outwardIssue.fields?.status?.name ?? outwardIssue.status ?? 'Unknown'),
-          priority: outwardIssue.fields?.priority?.name
-            ? String(outwardIssue.fields.priority.name)
+          summary: String(fields?.summary ?? outwardIssue.summary ?? ''),
+          type: String(issuetype?.name ?? outwardIssue.type ?? 'Unknown'),
+          status: String(status?.name ?? outwardIssue.status ?? 'Unknown'),
+          priority: priority?.name
+            ? String(priority.name)
             : outwardIssue.priority ? String(outwardIssue.priority) : undefined,
-          description: outwardIssue.fields?.description
-            ? String(outwardIssue.fields.description)
+          description: fields?.description
+            ? String(fields.description)
             : outwardIssue.description ? String(outwardIssue.description) : undefined,
         },
         linkType: normalizedType,
@@ -263,6 +273,132 @@ function parseLinkedIssues(issueObj: Record<string, unknown>): JiraLinkedIssue[]
 }
 
 /**
+ * Parse a simple issue array (AI-formatted response).
+ * Expected format: [{key, summary, type, status, ...}, ...]
+ */
+function parseIssueArray(parsed: unknown[]): JiraIssue[] {
+  const issues: JiraIssue[] = [];
+  
+  for (const item of parsed) {
+    if (
+      typeof item === 'object' &&
+      item !== null &&
+      'key' in item &&
+      typeof (item as Record<string, unknown>).key === 'string'
+    ) {
+      const issueObj = item as Record<string, unknown>;
+      
+      // Parse labels - handle both array and comma-separated string
+      let labels: string[] | undefined;
+      if (Array.isArray(issueObj.labels)) {
+        labels = issueObj.labels.map((l) => String(l));
+      } else if (typeof issueObj.labels === 'string' && issueObj.labels) {
+        labels = issueObj.labels.split(',').map((l) => l.trim()).filter(Boolean);
+      }
+
+      // Parse story points - handle various field names
+      let storyPoints: number | undefined;
+      const spValue = issueObj.storyPoints ?? issueObj.story_points ?? issueObj.customfield_10016;
+      if (typeof spValue === 'number') {
+        storyPoints = spValue;
+      } else if (typeof spValue === 'string') {
+        const parsedSp = parseFloat(spValue);
+        if (!isNaN(parsedSp)) {
+          storyPoints = parsedSp;
+        }
+      }
+
+      // Parse linked issues
+      const linkedIssues = parseLinkedIssues(issueObj);
+
+      issues.push({
+        key: String(issueObj.key),
+        summary: String(issueObj.summary ?? issueObj.title ?? ''),
+        type: String(issueObj.type ?? issueObj.issuetype ?? 'Unknown'),
+        status: String(issueObj.status ?? 'Unknown'),
+        priority: issueObj.priority ? String(issueObj.priority) : undefined,
+        description: issueObj.description ? String(issueObj.description) : undefined,
+        acceptanceCriteria: issueObj.acceptanceCriteria
+          ? String(issueObj.acceptanceCriteria)
+          : issueObj.acceptance_criteria
+            ? String(issueObj.acceptance_criteria)
+            : issueObj.customfield_10017
+              ? String(issueObj.customfield_10017)
+              : undefined,
+        labels,
+        storyPoints,
+        linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined,
+      });
+    }
+  }
+  
+  return issues;
+}
+
+/**
+ * Parse a Jira API format issue array.
+ * Expected format: [{key, fields: {summary, issuetype: {name}, status: {name}, ...}}, ...]
+ */
+function parseJiraApiIssueArray(parsed: unknown[]): JiraIssue[] {
+  const issues: JiraIssue[] = [];
+  
+  for (const item of parsed) {
+    if (typeof item !== 'object' || item === null) continue;
+    
+    const issueObj = item as Record<string, unknown>;
+    const key = issueObj.key;
+    if (typeof key !== 'string') continue;
+    
+    const fields = issueObj.fields as Record<string, unknown> | undefined;
+    if (!fields) {
+      // Maybe it's a simplified format without fields wrapper
+      if (issueObj.summary) {
+        issues.push({
+          key,
+          summary: String(issueObj.summary ?? ''),
+          type: String(issueObj.type ?? issueObj.issuetype ?? 'Unknown'),
+          status: String(issueObj.status ?? 'Unknown'),
+          priority: issueObj.priority ? String(issueObj.priority) : undefined,
+          description: issueObj.description ? String(issueObj.description) : undefined,
+        });
+      }
+      continue;
+    }
+    
+    const issuetype = fields.issuetype as Record<string, unknown> | undefined;
+    const status = fields.status as Record<string, unknown> | undefined;
+    const priority = fields.priority as Record<string, unknown> | undefined;
+    
+    // Parse labels
+    let labels: string[] | undefined;
+    if (Array.isArray(fields.labels)) {
+      labels = fields.labels.map((l) => String(l));
+    }
+    
+    // Parse story points
+    let storyPoints: number | undefined;
+    const spValue = fields.customfield_10016 ?? fields.storyPoints;
+    if (typeof spValue === 'number') {
+      storyPoints = spValue;
+    }
+    
+    issues.push({
+      key,
+      summary: String(fields.summary ?? ''),
+      type: String(issuetype?.name ?? 'Unknown'),
+      status: String(status?.name ?? 'Unknown'),
+      priority: priority?.name ? String(priority.name) : undefined,
+      description: fields.description ? String(fields.description) : undefined,
+      acceptanceCriteria: fields.customfield_10017 ? String(fields.customfield_10017) : undefined,
+      labels,
+      storyPoints,
+    });
+  }
+  
+  return issues;
+}
+
+/**
  * Parse Jira issues from Copilot CLI output.
  * The output format depends on how the MCP server formats the response.
  */
@@ -270,70 +406,51 @@ function parseIssuesFromOutput(output: string): JiraIssue[] {
   const issues: JiraIssue[] = [];
 
   // First, try to extract JSON from markdown code fences (```json ... ```)
-  let jsonContent = output;
+  // This is the preferred format as it's the AI-formatted response
   const markdownMatch = output.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (markdownMatch && markdownMatch[1]) {
-    jsonContent = markdownMatch[1].trim();
+    const jsonContent = markdownMatch[1].trim();
+    const jsonMatch = jsonContent.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]) as unknown[];
+        const parsedIssues = parseIssueArray(parsed);
+        if (parsedIssues.length > 0) {
+          return parsedIssues;
+        }
+      } catch {
+        // JSON parsing failed, continue to other methods
+      }
+    }
   }
 
-  // Try to find JSON array in the output
-  // MCP responses typically include structured data
-  const jsonMatch = jsonContent.match(/\[[\s\S]*\]/);
+  // Try to find a Jira API response format: {"issues": [...]}
+  const jiraApiMatch = output.match(/\{"[^"]*"[^}]*"issues"\s*:\s*\[[\s\S]*?\]\s*[,}]/);
+  if (jiraApiMatch) {
+    try {
+      // Extract just the issues array from the match
+      const issuesArrayMatch = jiraApiMatch[0].match(/"issues"\s*:\s*(\[[\s\S]*?\])/);
+      if (issuesArrayMatch && issuesArrayMatch[1]) {
+        const parsed = JSON.parse(issuesArrayMatch[1]) as unknown[];
+        const parsedIssues = parseJiraApiIssueArray(parsed);
+        if (parsedIssues.length > 0) {
+          return parsedIssues;
+        }
+      }
+    } catch {
+      // JSON parsing failed, continue to other methods
+    }
+  }
+
+  // Try to find any JSON array in the output
+  const jsonMatch = output.match(/\[[\s\S]*?\]/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0]) as unknown[];
-      for (const item of parsed) {
-        if (
-          typeof item === 'object' &&
-          item !== null &&
-          'key' in item &&
-          typeof (item as Record<string, unknown>).key === 'string'
-        ) {
-          const issueObj = item as Record<string, unknown>;
-          // Parse labels - handle both array and comma-separated string
-          let labels: string[] | undefined;
-          if (Array.isArray(issueObj.labels)) {
-            labels = issueObj.labels.map((l) => String(l));
-          } else if (typeof issueObj.labels === 'string' && issueObj.labels) {
-            labels = issueObj.labels.split(',').map((l) => l.trim()).filter(Boolean);
-          }
-
-          // Parse story points - handle various field names
-          let storyPoints: number | undefined;
-          const spValue = issueObj.storyPoints ?? issueObj.story_points ?? issueObj.customfield_10016;
-          if (typeof spValue === 'number') {
-            storyPoints = spValue;
-          } else if (typeof spValue === 'string') {
-            const parsed = parseFloat(spValue);
-            if (!isNaN(parsed)) {
-              storyPoints = parsed;
-            }
-          }
-
-          // Parse linked issues
-          const linkedIssues = parseLinkedIssues(issueObj);
-
-          issues.push({
-            key: String(issueObj.key),
-            summary: String(issueObj.summary ?? issueObj.title ?? ''),
-            type: String(issueObj.type ?? issueObj.issuetype ?? 'Unknown'),
-            status: String(issueObj.status ?? 'Unknown'),
-            priority: issueObj.priority ? String(issueObj.priority) : undefined,
-            description: issueObj.description ? String(issueObj.description) : undefined,
-            acceptanceCriteria: issueObj.acceptanceCriteria
-              ? String(issueObj.acceptanceCriteria)
-              : issueObj.acceptance_criteria
-                ? String(issueObj.acceptance_criteria)
-                : issueObj.customfield_10017 // Common Jira custom field for AC
-                  ? String(issueObj.customfield_10017)
-                  : undefined,
-            labels,
-            storyPoints,
-            linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined,
-          });
-        }
+      const parsedIssues = parseIssueArray(parsed);
+      if (parsedIssues.length > 0) {
+        return parsedIssues;
       }
-      return issues;
     } catch {
       // JSON parsing failed, try line-by-line parsing
     }

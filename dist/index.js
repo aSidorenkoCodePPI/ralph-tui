@@ -92671,28 +92671,36 @@ function parseLinkedIssues(issueObj) {
     const inwardIssue = linkObj.inwardIssue;
     const outwardIssue = linkObj.outwardIssue;
     if (inwardIssue && typeof inwardIssue.key === "string") {
+      const fields = inwardIssue.fields;
+      const issuetype = fields?.issuetype;
+      const status = fields?.status;
+      const priority = fields?.priority;
       linkedIssues.push({
         issue: {
           key: String(inwardIssue.key),
-          summary: String(inwardIssue.fields?.summary ?? inwardIssue.summary ?? ""),
-          type: String(inwardIssue.fields?.issuetype?.name ?? inwardIssue.type ?? "Unknown"),
-          status: String(inwardIssue.fields?.status?.name ?? inwardIssue.status ?? "Unknown"),
-          priority: inwardIssue.fields?.priority?.name ? String(inwardIssue.fields.priority.name) : inwardIssue.priority ? String(inwardIssue.priority) : undefined,
-          description: inwardIssue.fields?.description ? String(inwardIssue.fields.description) : inwardIssue.description ? String(inwardIssue.description) : undefined
+          summary: String(fields?.summary ?? inwardIssue.summary ?? ""),
+          type: String(issuetype?.name ?? inwardIssue.type ?? "Unknown"),
+          status: String(status?.name ?? inwardIssue.status ?? "Unknown"),
+          priority: priority?.name ? String(priority.name) : inwardIssue.priority ? String(inwardIssue.priority) : undefined,
+          description: fields?.description ? String(fields.description) : inwardIssue.description ? String(inwardIssue.description) : undefined
         },
         linkType: normalizedType,
         direction: "inward"
       });
     }
     if (outwardIssue && typeof outwardIssue.key === "string") {
+      const fields = outwardIssue.fields;
+      const issuetype = fields?.issuetype;
+      const status = fields?.status;
+      const priority = fields?.priority;
       linkedIssues.push({
         issue: {
           key: String(outwardIssue.key),
-          summary: String(outwardIssue.fields?.summary ?? outwardIssue.summary ?? ""),
-          type: String(outwardIssue.fields?.issuetype?.name ?? outwardIssue.type ?? "Unknown"),
-          status: String(outwardIssue.fields?.status?.name ?? outwardIssue.status ?? "Unknown"),
-          priority: outwardIssue.fields?.priority?.name ? String(outwardIssue.fields.priority.name) : outwardIssue.priority ? String(outwardIssue.priority) : undefined,
-          description: outwardIssue.fields?.description ? String(outwardIssue.fields.description) : outwardIssue.description ? String(outwardIssue.description) : undefined
+          summary: String(fields?.summary ?? outwardIssue.summary ?? ""),
+          type: String(issuetype?.name ?? outwardIssue.type ?? "Unknown"),
+          status: String(status?.name ?? outwardIssue.status ?? "Unknown"),
+          priority: priority?.name ? String(priority.name) : outwardIssue.priority ? String(outwardIssue.priority) : undefined,
+          description: fields?.description ? String(fields.description) : outwardIssue.description ? String(outwardIssue.description) : undefined
         },
         linkType: normalizedType,
         direction: "outward"
@@ -92715,52 +92723,130 @@ function parseLinkedIssues(issueObj) {
   }
   return linkedIssues;
 }
+function parseIssueArray(parsed) {
+  const issues = [];
+  for (const item of parsed) {
+    if (typeof item === "object" && item !== null && "key" in item && typeof item.key === "string") {
+      const issueObj = item;
+      let labels;
+      if (Array.isArray(issueObj.labels)) {
+        labels = issueObj.labels.map((l) => String(l));
+      } else if (typeof issueObj.labels === "string" && issueObj.labels) {
+        labels = issueObj.labels.split(",").map((l) => l.trim()).filter(Boolean);
+      }
+      let storyPoints;
+      const spValue = issueObj.storyPoints ?? issueObj.story_points ?? issueObj.customfield_10016;
+      if (typeof spValue === "number") {
+        storyPoints = spValue;
+      } else if (typeof spValue === "string") {
+        const parsedSp = parseFloat(spValue);
+        if (!isNaN(parsedSp)) {
+          storyPoints = parsedSp;
+        }
+      }
+      const linkedIssues = parseLinkedIssues(issueObj);
+      issues.push({
+        key: String(issueObj.key),
+        summary: String(issueObj.summary ?? issueObj.title ?? ""),
+        type: String(issueObj.type ?? issueObj.issuetype ?? "Unknown"),
+        status: String(issueObj.status ?? "Unknown"),
+        priority: issueObj.priority ? String(issueObj.priority) : undefined,
+        description: issueObj.description ? String(issueObj.description) : undefined,
+        acceptanceCriteria: issueObj.acceptanceCriteria ? String(issueObj.acceptanceCriteria) : issueObj.acceptance_criteria ? String(issueObj.acceptance_criteria) : issueObj.customfield_10017 ? String(issueObj.customfield_10017) : undefined,
+        labels,
+        storyPoints,
+        linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined
+      });
+    }
+  }
+  return issues;
+}
+function parseJiraApiIssueArray(parsed) {
+  const issues = [];
+  for (const item of parsed) {
+    if (typeof item !== "object" || item === null)
+      continue;
+    const issueObj = item;
+    const key = issueObj.key;
+    if (typeof key !== "string")
+      continue;
+    const fields = issueObj.fields;
+    if (!fields) {
+      if (issueObj.summary) {
+        issues.push({
+          key,
+          summary: String(issueObj.summary ?? ""),
+          type: String(issueObj.type ?? issueObj.issuetype ?? "Unknown"),
+          status: String(issueObj.status ?? "Unknown"),
+          priority: issueObj.priority ? String(issueObj.priority) : undefined,
+          description: issueObj.description ? String(issueObj.description) : undefined
+        });
+      }
+      continue;
+    }
+    const issuetype = fields.issuetype;
+    const status = fields.status;
+    const priority = fields.priority;
+    let labels;
+    if (Array.isArray(fields.labels)) {
+      labels = fields.labels.map((l) => String(l));
+    }
+    let storyPoints;
+    const spValue = fields.customfield_10016 ?? fields.storyPoints;
+    if (typeof spValue === "number") {
+      storyPoints = spValue;
+    }
+    issues.push({
+      key,
+      summary: String(fields.summary ?? ""),
+      type: String(issuetype?.name ?? "Unknown"),
+      status: String(status?.name ?? "Unknown"),
+      priority: priority?.name ? String(priority.name) : undefined,
+      description: fields.description ? String(fields.description) : undefined,
+      acceptanceCriteria: fields.customfield_10017 ? String(fields.customfield_10017) : undefined,
+      labels,
+      storyPoints
+    });
+  }
+  return issues;
+}
 function parseIssuesFromOutput(output) {
   const issues = [];
-  let jsonContent = output;
   const markdownMatch = output.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (markdownMatch && markdownMatch[1]) {
-    jsonContent = markdownMatch[1].trim();
+    const jsonContent = markdownMatch[1].trim();
+    const jsonMatch2 = jsonContent.match(/\[[\s\S]*\]/);
+    if (jsonMatch2) {
+      try {
+        const parsed = JSON.parse(jsonMatch2[0]);
+        const parsedIssues = parseIssueArray(parsed);
+        if (parsedIssues.length > 0) {
+          return parsedIssues;
+        }
+      } catch {}
+    }
   }
-  const jsonMatch = jsonContent.match(/\[[\s\S]*\]/);
+  const jiraApiMatch = output.match(/\{"[^"]*"[^}]*"issues"\s*:\s*\[[\s\S]*?\]\s*[,}]/);
+  if (jiraApiMatch) {
+    try {
+      const issuesArrayMatch = jiraApiMatch[0].match(/"issues"\s*:\s*(\[[\s\S]*?\])/);
+      if (issuesArrayMatch && issuesArrayMatch[1]) {
+        const parsed = JSON.parse(issuesArrayMatch[1]);
+        const parsedIssues = parseJiraApiIssueArray(parsed);
+        if (parsedIssues.length > 0) {
+          return parsedIssues;
+        }
+      }
+    } catch {}
+  }
+  const jsonMatch = output.match(/\[[\s\S]*?\]/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
-      for (const item of parsed) {
-        if (typeof item === "object" && item !== null && "key" in item && typeof item.key === "string") {
-          const issueObj = item;
-          let labels;
-          if (Array.isArray(issueObj.labels)) {
-            labels = issueObj.labels.map((l) => String(l));
-          } else if (typeof issueObj.labels === "string" && issueObj.labels) {
-            labels = issueObj.labels.split(",").map((l) => l.trim()).filter(Boolean);
-          }
-          let storyPoints;
-          const spValue = issueObj.storyPoints ?? issueObj.story_points ?? issueObj.customfield_10016;
-          if (typeof spValue === "number") {
-            storyPoints = spValue;
-          } else if (typeof spValue === "string") {
-            const parsed2 = parseFloat(spValue);
-            if (!isNaN(parsed2)) {
-              storyPoints = parsed2;
-            }
-          }
-          const linkedIssues = parseLinkedIssues(issueObj);
-          issues.push({
-            key: String(issueObj.key),
-            summary: String(issueObj.summary ?? issueObj.title ?? ""),
-            type: String(issueObj.type ?? issueObj.issuetype ?? "Unknown"),
-            status: String(issueObj.status ?? "Unknown"),
-            priority: issueObj.priority ? String(issueObj.priority) : undefined,
-            description: issueObj.description ? String(issueObj.description) : undefined,
-            acceptanceCriteria: issueObj.acceptanceCriteria ? String(issueObj.acceptanceCriteria) : issueObj.acceptance_criteria ? String(issueObj.acceptance_criteria) : issueObj.customfield_10017 ? String(issueObj.customfield_10017) : undefined,
-            labels,
-            storyPoints,
-            linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined
-          });
-        }
+      const parsedIssues = parseIssueArray(parsed);
+      if (parsedIssues.length > 0) {
+        return parsedIssues;
       }
-      return issues;
     } catch {}
   }
   const lines = output.split(`
@@ -94189,4 +94275,4 @@ export {
   AgentRegistry
 };
 
-//# debugId=9502D8F51CBDA3F764756E2164756E21
+//# debugId=1D7A19E61F8DEE1464756E2164756E21

@@ -239,8 +239,9 @@ export function mapJiraIssueToPrd(
     defaultedFields.push('acceptanceCriteria');
   }
 
-  // Map priority
-  const priority = mapPriorityToNumber(issue.priority, config.defaultPriority);
+  // Map priority (stored for potential future use in PRD extensions)
+  const _priority = mapPriorityToNumber(issue.priority, config.defaultPriority);
+  void _priority; // Intentionally unused - available for PRD format extensions
   if (issue.priority) {
     mappedFields.push('priority');
   } else {
