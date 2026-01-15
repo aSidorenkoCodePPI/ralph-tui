@@ -37099,7 +37099,7 @@ var require_node_notifier = __commonJS((exports, module2) => {
 var require_package = __commonJS((exports, module2) => {
   module2.exports = {
     name: "@asidorenkocodeppi/ralph-tui",
-    version: "0.1.11",
+    version: "0.1.13",
     publishConfig: {
       access: "public"
     },
@@ -37127,10 +37127,7 @@ var require_package = __commonJS((exports, module2) => {
       "lint:fix": "eslint src/ --fix",
       clean: `node -e "const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})"`,
       dev: "bun run ./src/cli.tsx",
-      prepublishOnly: "bun run build",
-      "website:dev": "cd website && bun run dev",
-      "website:build": "cd website && bun run build",
-      "website:lint": "cd website && bun run lint"
+      prepublishOnly: "bun run build"
     },
     author: "subsy",
     license: "MIT",
@@ -94084,4 +94081,4 @@ main2().catch((error48) => {
   process.exit(1);
 });
 
-//# debugId=6DD1655DD9C95DC964756E2164756E21
+//# debugId=B80B06A468F4946E64756E2164756E21
