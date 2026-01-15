@@ -1,0 +1,30 @@
+# npm ignore file - explicitly control what's published/installed
+
+# Exclude source and development files
+src/
+website/
+.beads/
+.github/
+docs/
+skills/
+tasks/
+
+# Exclude config files
+.bv/
+.claude/
+.ralph-tui/
+.gitignore
+.gitattributes
+*.md
+!README.md
+tsconfig.json
+eslint.config.js
+pnpm-lock.yaml
+bun.lock
+
+# Exclude test/build artifacts
+*.tsbuildinfo
+*.tgz
+package/
+
+# Include dist/ (not listed = included)
