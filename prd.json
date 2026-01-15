@@ -1,0 +1,22 @@
+{
+  "name": "Sample Project",
+  "branchName": "feature/sample",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Sample task",
+      "description": "As a developer, I want to test ralph-tui to verify it works correctly",
+      "acceptanceCriteria": [
+        "Ralph-tui launches successfully",
+        "Task is displayed in the TUI"
+      ],
+      "priority": 1,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-01-15T00:21:15.113Z"
+  }
+}

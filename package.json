@@ -1,0 +1,79 @@
+{
+  "name": "ralph-tui",
+  "version": "0.1.6",
+  "description": "Ralph TUI - AI Agent Loop Orchestrator",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "ralph-tui": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "bun run build:cli && bun run build:lib && bun run build:assets",
+    "build:cli": "bun build ./src/cli.tsx --outdir ./dist --target bun --sourcemap=external",
+    "build:lib": "bun build ./src/index.ts --outdir ./dist --target bun --sourcemap=external",
+    "build:assets": "node -e \"const fs=require('fs');const path=require('path');function copyDir(s,d){fs.mkdirSync(d,{recursive:true});for(const f of fs.readdirSync(s)){const sp=path.join(s,f),dp=path.join(d,f);fs.statSync(sp).isDirectory()?copyDir(sp,dp):fs.copyFileSync(sp,dp)}}copyDir('assets','dist/assets')\"",
+    "build:types": "tsc --emitDeclarationOnly --declaration --outDir dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
+    "dev": "bun run ./src/cli.tsx",
+    "prepublishOnly": "bun run build",
+    "website:dev": "cd website && bun run dev",
+    "website:build": "cd website && bun run build",
+    "website:lint": "cd website && bun run lint"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "tui",
+    "ai",
+    "agent",
+    "orchestrator",
+    "terminal",
+    "cli"
+  ],
+  "author": "subsy",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aSidorenkoCodePPI/ralph-tui.git"
+  },
+  "homepage": "https://github.com/aSidorenkoCodePPI/ralph-tui",
+  "bugs": {
+    "url": "https://github.com/aSidorenkoCodePPI/ralph-tui/issues"
+  },
+  "packageManager": "bun@1.2.17",
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/handlebars": "^4.1.0",
+    "@types/node": "^25.0.6",
+    "@types/node-notifier": "^8.0.5",
+    "@types/react": "^19.2.8",
+    "@typescript-eslint/eslint-plugin": "^8.52.0",
+    "@typescript-eslint/parser": "^8.52.0",
+    "eslint": "^9.39.2",
+    "react": "^19.2.3",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.1.72",
+    "@opentui/react": "^0.1.72",
+    "handlebars": "^4.7.8",
+    "node-notifier": "^8.0.2",
+    "smol-toml": "^1.6.0",
+    "yaml": "^2.8.2",
+    "zod": "^4.3.5"
+  }
+}

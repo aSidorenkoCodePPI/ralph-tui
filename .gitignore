@@ -1,0 +1,50 @@
+# bv (beads viewer) local config and caches
+.bv/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Ralph runtime/generated files
+tasks/
+
+# Build packaging output
+package/
+
+# Node.js
+node_modules/
+dist/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Build outputs
+*.tsbuildinfo
+*.tgz
+
+# Next.js (root level)
+.next/
+out/
+
+# Website build outputs
+website/.next/
+website/out/
+website/node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Ralph TUI runtime (all user-specific state)
+.ralph-tui/
+.envrc
