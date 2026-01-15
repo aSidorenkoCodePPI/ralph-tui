@@ -138,6 +138,9 @@ export interface LearnArgs {
 
   /** Force overwrite existing context file */
   force: boolean;
+
+  /** Custom output file path */
+  output: string | null;
 }
 
 /**
@@ -153,9 +156,10 @@ Arguments:
   [path]              Directory to analyze (default: current directory)
 
 Options:
+  --output, -o <path> Custom output file path (default: ./ralph-context.md)
   --json              Output in JSON format (machine-readable)
   --verbose, -v       Show detailed analysis output
-  --force, -f         Overwrite existing ralph-context.md without confirmation
+  --force, -f         Overwrite existing file without confirmation
   -h, --help          Show this help message
 
 Description:
@@ -173,6 +177,7 @@ Description:
 
 Output:
   Creates ralph-context.md in the project root by default.
+  Use --output to specify a custom path (parent directories will be created).
   If the file exists, prompts for confirmation unless --force is used.
 
 Exit Codes:
@@ -180,11 +185,13 @@ Exit Codes:
   1    Analysis failed (invalid path, permission error, etc.)
 
 Examples:
-  ralph-tui learn                    # Analyze current directory
-  ralph-tui learn ./my-project       # Analyze specific directory
-  ralph-tui learn --json             # JSON output for scripts
-  ralph-tui learn -v                 # Verbose output
-  ralph-tui learn --force            # Overwrite without confirmation
+  ralph-tui learn                             # Analyze current directory
+  ralph-tui learn ./my-project                # Analyze specific directory
+  ralph-tui learn --output ./docs/context.md  # Custom output location
+  ralph-tui learn -o "path with spaces/ctx.md" # Path with spaces
+  ralph-tui learn --json                      # JSON output for scripts
+  ralph-tui learn -v                          # Verbose output
+  ralph-tui learn --force                     # Overwrite without confirmation
 `);
 }
 
@@ -197,6 +204,7 @@ export function parseLearnArgs(args: string[]): LearnArgs {
     json: false,
     verbose: false,
     force: false,
+    output: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -211,6 +219,13 @@ export function parseLearnArgs(args: string[]): LearnArgs {
       result.verbose = true;
     } else if (arg === '--force' || arg === '-f') {
       result.force = true;
+    } else if (arg === '--output' || arg === '-o') {
+      const nextArg = args[++i];
+      if (!nextArg || nextArg.startsWith('-')) {
+        console.error('Error: --output requires a path argument');
+        process.exit(1);
+      }
+      result.output = path.resolve(nextArg);
     } else if (!arg.startsWith('-')) {
       // Positional argument - treat as path
       result.path = path.resolve(arg);
@@ -1025,7 +1040,8 @@ function printHumanResult(result: LearnResult, verbose: boolean): void {
  */
 export async function executeLearnCommand(args: string[]): Promise<void> {
   const parsedArgs = parseLearnArgs(args);
-  const contextFilePath = path.join(parsedArgs.path, 'ralph-context.md');
+  // Use custom output path or default to ralph-context.md in analyzed directory
+  const contextFilePath = parsedArgs.output || path.join(parsedArgs.path, 'ralph-context.md');
 
   try {
     if (!parsedArgs.json) {
@@ -1037,6 +1053,23 @@ export async function executeLearnCommand(args: string[]): Promise<void> {
 
     // Generate and write context file (unless JSON output mode)
     if (!parsedArgs.json) {
+      // Create parent directories if they don't exist
+      const parentDir = path.dirname(contextFilePath);
+      if (!fs.existsSync(parentDir)) {
+        try {
+          fs.mkdirSync(parentDir, { recursive: true });
+        } catch (mkdirError) {
+          throw new Error(`Cannot create parent directories for ${contextFilePath}: ${mkdirError instanceof Error ? mkdirError.message : String(mkdirError)}`);
+        }
+      }
+
+      // Check if path is writable by attempting to access parent directory
+      try {
+        fs.accessSync(parentDir, fs.constants.W_OK);
+      } catch {
+        throw new Error(`Path is not writable: ${contextFilePath}`);
+      }
+
       // Check if file exists and handle overwrite
       if (fs.existsSync(contextFilePath)) {
         if (!parsedArgs.force) {
@@ -1053,7 +1086,11 @@ export async function executeLearnCommand(args: string[]): Promise<void> {
 
       // Generate and write the context file
       const contextContent = generateContextMarkdown(result);
-      fs.writeFileSync(contextFilePath, contextContent, 'utf-8');
+      try {
+        fs.writeFileSync(contextFilePath, contextContent, 'utf-8');
+      } catch (writeError) {
+        throw new Error(`Cannot write to ${contextFilePath}: ${writeError instanceof Error ? writeError.message : String(writeError)}`);
+      }
       
       printHumanResult(result, parsedArgs.verbose);
       

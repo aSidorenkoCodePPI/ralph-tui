@@ -80,6 +80,12 @@ Convert Options:
   --branch, -b <name> Git branch name (prompts if not provided)
   --force, -f         Overwrite existing files
 
+Learn Options:
+  --output, -o <path> Custom output file path (default: ./ralph-context.md)
+  --json              Output analysis in JSON format
+  --verbose, -v       Show detailed analysis output
+  --force, -f         Overwrite existing file without confirmation
+
 Examples:
   ralph-tui                              # Start execution (same as 'run')
   ralph-tui create-prd                   # Create a new PRD interactively
@@ -87,6 +93,7 @@ Examples:
   ralph-tui convert --to json ./prd.md   # Convert PRD to JSON
   ralph-tui learn                        # Analyze current directory
   ralph-tui learn ./my-project           # Analyze specific directory
+  ralph-tui learn --output ./docs/ctx.md # Custom output location
   ralph-tui run                          # Start execution with defaults
   ralph-tui run --epic myproject-epic    # Run with specific epic
   ralph-tui run --prd ./prd.json         # Run with PRD file
