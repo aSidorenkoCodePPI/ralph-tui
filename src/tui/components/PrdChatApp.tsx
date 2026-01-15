@@ -3,6 +3,7 @@
  * Provides an interactive chat interface for generating PRDs using an AI agent.
  * After PRD generation, shows a split view with PRD preview and tracker options.
  * Handles existing prd.json conflicts with user choice (Skip, Overwrite, Merge, Backup).
+ * Supports Jira issue as starting context when provided.
  */
 
 import type { ReactNode } from 'react';
@@ -26,6 +27,7 @@ import {
 } from '../../prd/conflict.js';
 import type { PrdConflictResolution, PrdJsonContent } from '../../prd/conflict.js';
 import { colors } from '../theme.js';
+import type { JiraIssue } from '../../commands/jira-prd.js';
 
 /**
  * Props for the PrdChatApp component
@@ -59,6 +61,9 @@ export interface PrdChatAppProps {
 
   prdSkillSource?: string;
 
+  /** Jira issue to use as starting context (from --jira flag) */
+  jiraIssue?: JiraIssue;
+
   /** Callback when PRD is successfully generated */
   onComplete: (result: PrdCreationResult) => void;
 
@@ -79,6 +84,72 @@ const WELCOME_MESSAGE: ChatMessage = {
 What feature would you like to build? Describe it in a few sentences, and I'll ask clarifying questions to understand your needs.`,
   timestamp: new Date(),
 };
+
+/**
+ * Build initial messages based on whether we have a Jira issue as context
+ */
+function buildInitialMessages(jiraIssue?: JiraIssue): ChatMessage[] {
+  if (!jiraIssue) {
+    return [WELCOME_MESSAGE];
+  }
+
+  // Build a rich context message from the Jira issue
+  const linkedIssuesSummary = jiraIssue.linkedIssues && jiraIssue.linkedIssues.length > 0
+    ? jiraIssue.linkedIssues
+        .map((link) => `  - ${link.issue.key} (${link.linkType}): ${link.issue.summary}`)
+        .join('\n')
+    : null;
+
+  const contextParts: string[] = [
+    `I'll help you create a PRD based on Jira issue **${jiraIssue.key}**.`,
+    '',
+    `**Summary:** ${jiraIssue.summary}`,
+    `**Type:** ${jiraIssue.type}`,
+    `**Status:** ${jiraIssue.status}`,
+  ];
+
+  if (jiraIssue.priority) {
+    contextParts.push(`**Priority:** ${jiraIssue.priority}`);
+  }
+
+  if (jiraIssue.description) {
+    contextParts.push('', '**Description:**', jiraIssue.description);
+  }
+
+  if (jiraIssue.acceptanceCriteria) {
+    contextParts.push('', '**Acceptance Criteria:**', jiraIssue.acceptanceCriteria);
+  }
+
+  if (jiraIssue.labels && jiraIssue.labels.length > 0) {
+    contextParts.push('', `**Labels:** ${jiraIssue.labels.join(', ')}`);
+  }
+
+  if (jiraIssue.storyPoints) {
+    contextParts.push(`**Story Points:** ${jiraIssue.storyPoints}`);
+  }
+
+  if (linkedIssuesSummary) {
+    contextParts.push('', '**Linked Issues:**', linkedIssuesSummary);
+  }
+
+  contextParts.push(
+    '',
+    'I have this context from Jira. Would you like me to generate a PRD based on this issue, or would you like to add more details first?',
+    '',
+    'You can:',
+    '- Type "go" or "generate" to create the PRD now',
+    '- Add more context or requirements in your message',
+    '- Ask me questions about the PRD structure'
+  );
+
+  const welcomeWithJira: ChatMessage = {
+    role: 'assistant',
+    content: contextParts.join('\n'),
+    timestamp: new Date(),
+  };
+
+  return [welcomeWithJira];
+}
 
 /**
  * Tracker option for task generation
@@ -197,6 +268,7 @@ export function PrdChatApp({
   timeout = 180000,
   prdSkill,
   prdSkillSource,
+  jiraIssue,
   onComplete,
   onCancel,
   onError,
@@ -209,8 +281,11 @@ export function PrdChatApp({
   const [prdPath, setPrdPath] = useState<string | null>(null);
   const [featureName, setFeatureName] = useState<string | null>(null);
 
+  // Build initial messages based on whether we have a Jira issue
+  const initialMessages = buildInitialMessages(jiraIssue);
+
   // Chat state
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
@@ -244,6 +319,7 @@ export function PrdChatApp({
       timeout,
       prdSkill,
       prdSkillSource,
+      jiraIssue,
     });
     const taskEngine = createTaskChatEngine(agent, { cwd, timeout });
 
@@ -274,7 +350,7 @@ export function PrdChatApp({
       isMountedRef.current = false;
       unsubscribe();
     };
-  }, [agent, cwd, timeout, prdSkill, prdSkillSource, onError]);
+  }, [agent, cwd, timeout, prdSkill, prdSkillSource, jiraIssue, onError]);
 
   /**
    * Handle PRD detection - save file and switch to review phase

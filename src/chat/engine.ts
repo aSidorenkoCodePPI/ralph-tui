@@ -15,6 +15,7 @@ import type {
   ChatEventListener,
 } from './types.js';
 import type { AgentPlugin, AgentExecuteOptions } from '../plugins/agents/types.js';
+import type { JiraIssue } from '../commands/jira-prd.js';
 
 /**
  * Default system prompt for PRD generation.
@@ -373,13 +374,20 @@ export function createPrdChatEngine(
     timeout?: number;
     prdSkill?: string;
     prdSkillSource?: string;
+    jiraIssue?: JiraIssue;
   } = {}
 ): ChatEngine {
-  const systemPrompt = options.prdSkillSource
+  let systemPrompt = options.prdSkillSource
     ? buildPrdSystemPromptFromSkillSource(options.prdSkillSource)
     : options.prdSkill
       ? buildPrdSystemPrompt(options.prdSkill)
       : PRD_SYSTEM_PROMPT;
+
+  // If we have a Jira issue, add it to the system prompt as context
+  if (options.jiraIssue) {
+    const jiraContext = buildJiraIssueContext(options.jiraIssue);
+    systemPrompt = `${systemPrompt}\n\n${jiraContext}`;
+  }
 
   return new ChatEngine({
     agent,
@@ -387,6 +395,63 @@ export function createPrdChatEngine(
     cwd: options.cwd,
     timeout: options.timeout ?? 180000,
   });
+}
+
+/**
+ * Build context string from a Jira issue for inclusion in system prompt.
+ */
+function buildJiraIssueContext(issue: JiraIssue): string {
+  const parts: string[] = [
+    '# Jira Issue Context',
+    `The user is creating a PRD based on Jira issue ${issue.key}.`,
+    '',
+    '## Issue Details',
+    `- **Key:** ${issue.key}`,
+    `- **Summary:** ${issue.summary}`,
+    `- **Type:** ${issue.type}`,
+    `- **Status:** ${issue.status}`,
+  ];
+
+  if (issue.priority) {
+    parts.push(`- **Priority:** ${issue.priority}`);
+  }
+
+  if (issue.storyPoints) {
+    parts.push(`- **Story Points:** ${issue.storyPoints}`);
+  }
+
+  if (issue.labels && issue.labels.length > 0) {
+    parts.push(`- **Labels:** ${issue.labels.join(', ')}`);
+  }
+
+  if (issue.description) {
+    parts.push('', '## Description', issue.description);
+  }
+
+  if (issue.acceptanceCriteria) {
+    parts.push('', '## Acceptance Criteria', issue.acceptanceCriteria);
+  }
+
+  if (issue.linkedIssues && issue.linkedIssues.length > 0) {
+    parts.push('', '## Linked Issues');
+    for (const link of issue.linkedIssues) {
+      parts.push(`- ${link.issue.key} (${link.linkType}, ${link.direction}): ${link.issue.summary}`);
+      if (link.issue.description) {
+        parts.push(`  Description: ${link.issue.description.substring(0, 200)}${link.issue.description.length > 200 ? '...' : ''}`);
+      }
+    }
+  }
+
+  parts.push(
+    '',
+    '## Instructions',
+    'Use this Jira issue context as the foundation for the PRD.',
+    'The PRD should address the requirements in this issue.',
+    'If the user says "go" or "generate", create the PRD based on the Jira issue details.',
+    'Ask clarifying questions only if critical information is missing.'
+  );
+
+  return parts.join('\n');
 }
 
 export function createTaskChatEngine(

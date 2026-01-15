@@ -36310,7 +36310,7 @@ var require_growl = __commonJS((exports, module2) => {
 
 // node_modules/node-notifier/notifiers/notificationcenter.js
 var require_notificationcenter = __commonJS((exports, module2) => {
-  var __dirname = "C:\\Users\\artur\\OneDrive\\Desktop\\Artur\\UNI\\Projekte\\ralph-tui-main\\node_modules\\node-notifier\\notifiers";
+  var __dirname = "C:\\Users\\ars\\Documents\\KI-Helge\\ralph-tui\\node_modules\\node-notifier\\notifiers";
   var utils = require_utils2();
   var Growl = require_growl();
   var path3 = __require("path");
@@ -36387,7 +36387,7 @@ var require_notificationcenter = __commonJS((exports, module2) => {
 
 // node_modules/node-notifier/notifiers/balloon.js
 var require_balloon = __commonJS((exports, module2) => {
-  var __dirname = "C:\\Users\\artur\\OneDrive\\Desktop\\Artur\\UNI\\Projekte\\ralph-tui-main\\node_modules\\node-notifier\\notifiers";
+  var __dirname = "C:\\Users\\ars\\Documents\\KI-Helge\\ralph-tui\\node_modules\\node-notifier\\notifiers";
   var path3 = __require("path");
   var notifier = path3.resolve(__dirname, "../vendor/notifu/notifu");
   var checkGrowl = require_checkGrowl();
@@ -36946,7 +36946,7 @@ var require_dist = __commonJS((exports) => {
 
 // node_modules/node-notifier/notifiers/toaster.js
 var require_toaster = __commonJS((exports, module2) => {
-  var __dirname = "C:\\Users\\artur\\OneDrive\\Desktop\\Artur\\UNI\\Projekte\\ralph-tui-main\\node_modules\\node-notifier\\notifiers";
+  var __dirname = "C:\\Users\\ars\\Documents\\KI-Helge\\ralph-tui\\node_modules\\node-notifier\\notifiers";
   var path3 = __require("path");
   var notifier = path3.resolve(__dirname, "../vendor/snoreToast/snoretoast");
   var utils = require_utils2();
@@ -90753,13 +90753,58 @@ ${prdMatch[2]}`.trim();
   }
 }
 function createPrdChatEngine(agent, options = {}) {
-  const systemPrompt = options.prdSkillSource ? buildPrdSystemPromptFromSkillSource(options.prdSkillSource) : options.prdSkill ? buildPrdSystemPrompt(options.prdSkill) : PRD_SYSTEM_PROMPT;
+  let systemPrompt = options.prdSkillSource ? buildPrdSystemPromptFromSkillSource(options.prdSkillSource) : options.prdSkill ? buildPrdSystemPrompt(options.prdSkill) : PRD_SYSTEM_PROMPT;
+  if (options.jiraIssue) {
+    const jiraContext = buildJiraIssueContext(options.jiraIssue);
+    systemPrompt = `${systemPrompt}
+
+${jiraContext}`;
+  }
   return new ChatEngine({
     agent,
     systemPrompt,
     cwd: options.cwd,
     timeout: options.timeout ?? 180000
   });
+}
+function buildJiraIssueContext(issue2) {
+  const parts = [
+    "# Jira Issue Context",
+    `The user is creating a PRD based on Jira issue ${issue2.key}.`,
+    "",
+    "## Issue Details",
+    `- **Key:** ${issue2.key}`,
+    `- **Summary:** ${issue2.summary}`,
+    `- **Type:** ${issue2.type}`,
+    `- **Status:** ${issue2.status}`
+  ];
+  if (issue2.priority) {
+    parts.push(`- **Priority:** ${issue2.priority}`);
+  }
+  if (issue2.storyPoints) {
+    parts.push(`- **Story Points:** ${issue2.storyPoints}`);
+  }
+  if (issue2.labels && issue2.labels.length > 0) {
+    parts.push(`- **Labels:** ${issue2.labels.join(", ")}`);
+  }
+  if (issue2.description) {
+    parts.push("", "## Description", issue2.description);
+  }
+  if (issue2.acceptanceCriteria) {
+    parts.push("", "## Acceptance Criteria", issue2.acceptanceCriteria);
+  }
+  if (issue2.linkedIssues && issue2.linkedIssues.length > 0) {
+    parts.push("", "## Linked Issues");
+    for (const link2 of issue2.linkedIssues) {
+      parts.push(`- ${link2.issue.key} (${link2.linkType}, ${link2.direction}): ${link2.issue.summary}`);
+      if (link2.issue.description) {
+        parts.push(`  Description: ${link2.issue.description.substring(0, 200)}${link2.issue.description.length > 200 ? "..." : ""}`);
+      }
+    }
+  }
+  parts.push("", "## Instructions", "Use this Jira issue context as the foundation for the PRD.", "The PRD should address the requirements in this issue.", 'If the user says "go" or "generate", create the PRD based on the Jira issue details.', "Ask clarifying questions only if critical information is missing.");
+  return parts.join(`
+`);
 }
 function createTaskChatEngine(agent, options = {}) {
   return new ChatEngine({
@@ -91241,6 +91286,46 @@ var WELCOME_MESSAGE = {
 What feature would you like to build? Describe it in a few sentences, and I'll ask clarifying questions to understand your needs.`,
   timestamp: new Date
 };
+function buildInitialMessages(jiraIssue) {
+  if (!jiraIssue) {
+    return [WELCOME_MESSAGE];
+  }
+  const linkedIssuesSummary = jiraIssue.linkedIssues && jiraIssue.linkedIssues.length > 0 ? jiraIssue.linkedIssues.map((link2) => `  - ${link2.issue.key} (${link2.linkType}): ${link2.issue.summary}`).join(`
+`) : null;
+  const contextParts = [
+    `I'll help you create a PRD based on Jira issue **${jiraIssue.key}**.`,
+    "",
+    `**Summary:** ${jiraIssue.summary}`,
+    `**Type:** ${jiraIssue.type}`,
+    `**Status:** ${jiraIssue.status}`
+  ];
+  if (jiraIssue.priority) {
+    contextParts.push(`**Priority:** ${jiraIssue.priority}`);
+  }
+  if (jiraIssue.description) {
+    contextParts.push("", "**Description:**", jiraIssue.description);
+  }
+  if (jiraIssue.acceptanceCriteria) {
+    contextParts.push("", "**Acceptance Criteria:**", jiraIssue.acceptanceCriteria);
+  }
+  if (jiraIssue.labels && jiraIssue.labels.length > 0) {
+    contextParts.push("", `**Labels:** ${jiraIssue.labels.join(", ")}`);
+  }
+  if (jiraIssue.storyPoints) {
+    contextParts.push(`**Story Points:** ${jiraIssue.storyPoints}`);
+  }
+  if (linkedIssuesSummary) {
+    contextParts.push("", "**Linked Issues:**", linkedIssuesSummary);
+  }
+  contextParts.push("", "I have this context from Jira. Would you like me to generate a PRD based on this issue, or would you like to add more details first?", "", "You can:", '- Type "go" or "generate" to create the PRD now', "- Add more context or requirements in your message", "- Ask me questions about the PRD structure");
+  const welcomeWithJira = {
+    role: "assistant",
+    content: contextParts.join(`
+`),
+    timestamp: new Date
+  };
+  return [welcomeWithJira];
+}
 function getTrackerOptions(cwd) {
   const beadsDir = join18(cwd, ".beads");
   const hasBeads = existsSync6(beadsDir);
@@ -91343,6 +91428,7 @@ function PrdChatApp({
   timeout = 180000,
   prdSkill,
   prdSkillSource,
+  jiraIssue,
   onComplete,
   onCancel,
   onError
@@ -91351,7 +91437,8 @@ function PrdChatApp({
   const [prdContent, setPrdContent] = import_react28.useState(null);
   const [prdPath, setPrdPath] = import_react28.useState(null);
   const [featureName, setFeatureName] = import_react28.useState(null);
-  const [messages, setMessages] = import_react28.useState([WELCOME_MESSAGE]);
+  const initialMessages = buildInitialMessages(jiraIssue);
+  const [messages, setMessages] = import_react28.useState(initialMessages);
   const [inputValue, setInputValue] = import_react28.useState("");
   const [isLoading, setIsLoading] = import_react28.useState(false);
   const [loadingStatus, setLoadingStatus] = import_react28.useState("");
@@ -91372,7 +91459,8 @@ function PrdChatApp({
       cwd,
       timeout,
       prdSkill,
-      prdSkillSource
+      prdSkillSource,
+      jiraIssue
     });
     const taskEngine = createTaskChatEngine(agent, { cwd, timeout });
     const unsubscribe = engine2.on((event) => {
@@ -91396,7 +91484,7 @@ function PrdChatApp({
       isMountedRef.current = false;
       unsubscribe();
     };
-  }, [agent, cwd, timeout, prdSkill, prdSkillSource, onError]);
+  }, [agent, cwd, timeout, prdSkill, prdSkillSource, jiraIssue, onError]);
   const handlePrdDetected = async (content, name) => {
     try {
       const fullOutputDir = join18(cwd, outputDir);
@@ -91826,7 +91914,1128 @@ Press [3] to finish or select another format.` : `Merge failed: ${mergeResult.er
   }, undefined, true, undefined, this);
 }
 
+// src/commands/jira-prd.ts
+init_prompts();
+import { spawn as spawn7 } from "child_process";
+function parseJiraPrdArgs(args) {
+  const result = {};
+  for (let i = 0;i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--cwd" || arg === "-C") {
+      result.cwd = args[++i];
+    } else if (arg === "--timeout" || arg === "-t") {
+      const timeout = parseInt(args[++i] ?? "", 10);
+      if (!isNaN(timeout)) {
+        result.timeout = timeout;
+      }
+    } else if (arg === "--verbose" || arg === "-v") {
+      result.verbose = true;
+    } else if (arg === "--help" || arg === "-h") {
+      printJiraPrdHelp();
+      process.exit(0);
+    }
+  }
+  return result;
+}
+function printJiraPrdHelp() {
+  console.log(`
+ralph-tui jira-prd - Fetch Jira issues assigned to you for PRD generation
+
+Usage: ralph-tui jira-prd [options]
+
+Options:
+  --cwd, -C <path>     Working directory (default: current directory)
+  --timeout, -t <ms>   Timeout for MCP calls (default: 60000)
+  --verbose, -v        Show detailed output
+  --help, -h           Show this help message
+
+Description:
+  Connects to the Jira MCP server through Copilot CLI integration and
+  retrieves all issues assigned to the current user. Displays a list
+  of issues with their key, summary, type, and status.
+
+  This command is useful for reviewing available work before starting
+  PRD generation with 'ralph-tui create-prd'.
+
+Prerequisites:
+  - Copilot CLI must be installed and configured
+  - Jira MCP server must be configured in Copilot CLI
+  - User must be authenticated with Jira
+
+Examples:
+  ralph-tui jira-prd                    # Fetch assigned issues
+  ralph-tui jira-prd --verbose          # Show detailed output
+  ralph-tui jira-prd --timeout 120000   # Extended timeout for slow connections
+`);
+}
+function normalizeLinkType(linkTypeName) {
+  const normalized = linkTypeName.toLowerCase().trim();
+  if (normalized.includes("blocks") && !normalized.includes("blocked by")) {
+    return "blocks";
+  }
+  if (normalized.includes("blocked by") || normalized.includes("is blocked")) {
+    return "is blocked by";
+  }
+  if (normalized.includes("relates") || normalized.includes("related")) {
+    return "relates to";
+  }
+  return null;
+}
+function parseLinkedIssues(issueObj) {
+  const linkedIssues = [];
+  const linksData = issueObj.issuelinks ?? issueObj.links ?? issueObj.linkedIssues ?? issueObj.linked_issues;
+  if (!Array.isArray(linksData)) {
+    return linkedIssues;
+  }
+  for (const link2 of linksData) {
+    if (typeof link2 !== "object" || link2 === null)
+      continue;
+    const linkObj = link2;
+    const typeObj = linkObj.type;
+    const linkTypeName = typeObj?.name ?? typeObj?.outward ?? typeObj?.inward ?? linkObj.linkType ?? linkObj.type;
+    if (typeof linkTypeName !== "string")
+      continue;
+    const normalizedType = normalizeLinkType(linkTypeName);
+    if (!normalizedType)
+      continue;
+    const inwardIssue = linkObj.inwardIssue;
+    const outwardIssue = linkObj.outwardIssue;
+    if (inwardIssue && typeof inwardIssue.key === "string") {
+      const fields = inwardIssue.fields;
+      const issuetype = fields?.issuetype;
+      const status = fields?.status;
+      const priority = fields?.priority;
+      linkedIssues.push({
+        issue: {
+          key: String(inwardIssue.key),
+          summary: String(fields?.summary ?? inwardIssue.summary ?? ""),
+          type: String(issuetype?.name ?? inwardIssue.type ?? "Unknown"),
+          status: String(status?.name ?? inwardIssue.status ?? "Unknown"),
+          priority: priority?.name ? String(priority.name) : inwardIssue.priority ? String(inwardIssue.priority) : undefined,
+          description: fields?.description ? String(fields.description) : inwardIssue.description ? String(inwardIssue.description) : undefined
+        },
+        linkType: normalizedType,
+        direction: "inward"
+      });
+    }
+    if (outwardIssue && typeof outwardIssue.key === "string") {
+      const fields = outwardIssue.fields;
+      const issuetype = fields?.issuetype;
+      const status = fields?.status;
+      const priority = fields?.priority;
+      linkedIssues.push({
+        issue: {
+          key: String(outwardIssue.key),
+          summary: String(fields?.summary ?? outwardIssue.summary ?? ""),
+          type: String(issuetype?.name ?? outwardIssue.type ?? "Unknown"),
+          status: String(status?.name ?? outwardIssue.status ?? "Unknown"),
+          priority: priority?.name ? String(priority.name) : outwardIssue.priority ? String(outwardIssue.priority) : undefined,
+          description: fields?.description ? String(fields.description) : outwardIssue.description ? String(outwardIssue.description) : undefined
+        },
+        linkType: normalizedType,
+        direction: "outward"
+      });
+    }
+    if (!inwardIssue && !outwardIssue && linkObj.key && typeof linkObj.key === "string") {
+      linkedIssues.push({
+        issue: {
+          key: String(linkObj.key),
+          summary: String(linkObj.summary ?? ""),
+          type: String(linkObj.issueType ?? linkObj.type ?? "Unknown"),
+          status: String(linkObj.status ?? "Unknown"),
+          priority: linkObj.priority ? String(linkObj.priority) : undefined,
+          description: linkObj.description ? String(linkObj.description) : undefined
+        },
+        linkType: normalizedType,
+        direction: linkObj.direction === "inward" ? "inward" : "outward"
+      });
+    }
+  }
+  return linkedIssues;
+}
+function parseIssueArray(parsed) {
+  const issues = [];
+  for (const item of parsed) {
+    if (typeof item === "object" && item !== null && "key" in item && typeof item.key === "string") {
+      const issueObj = item;
+      let labels;
+      if (Array.isArray(issueObj.labels)) {
+        labels = issueObj.labels.map((l) => String(l));
+      } else if (typeof issueObj.labels === "string" && issueObj.labels) {
+        labels = issueObj.labels.split(",").map((l) => l.trim()).filter(Boolean);
+      }
+      let storyPoints;
+      const spValue = issueObj.storyPoints ?? issueObj.story_points ?? issueObj.customfield_10016;
+      if (typeof spValue === "number") {
+        storyPoints = spValue;
+      } else if (typeof spValue === "string") {
+        const parsedSp = parseFloat(spValue);
+        if (!isNaN(parsedSp)) {
+          storyPoints = parsedSp;
+        }
+      }
+      const linkedIssues = parseLinkedIssues(issueObj);
+      issues.push({
+        key: String(issueObj.key),
+        summary: String(issueObj.summary ?? issueObj.title ?? ""),
+        type: String(issueObj.type ?? issueObj.issuetype ?? "Unknown"),
+        status: String(issueObj.status ?? "Unknown"),
+        priority: issueObj.priority ? String(issueObj.priority) : undefined,
+        description: issueObj.description ? String(issueObj.description) : undefined,
+        acceptanceCriteria: issueObj.acceptanceCriteria ? String(issueObj.acceptanceCriteria) : issueObj.acceptance_criteria ? String(issueObj.acceptance_criteria) : issueObj.customfield_10017 ? String(issueObj.customfield_10017) : undefined,
+        labels,
+        storyPoints,
+        linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined
+      });
+    }
+  }
+  return issues;
+}
+function parseJiraApiIssueArray(parsed) {
+  const issues = [];
+  for (const item of parsed) {
+    if (typeof item !== "object" || item === null)
+      continue;
+    const issueObj = item;
+    const key = issueObj.key;
+    if (typeof key !== "string")
+      continue;
+    const fields = issueObj.fields;
+    if (!fields) {
+      if (issueObj.summary) {
+        issues.push({
+          key,
+          summary: String(issueObj.summary ?? ""),
+          type: String(issueObj.type ?? issueObj.issuetype ?? "Unknown"),
+          status: String(issueObj.status ?? "Unknown"),
+          priority: issueObj.priority ? String(issueObj.priority) : undefined,
+          description: issueObj.description ? String(issueObj.description) : undefined
+        });
+      }
+      continue;
+    }
+    const issuetype = fields.issuetype;
+    const status = fields.status;
+    const priority = fields.priority;
+    let labels;
+    if (Array.isArray(fields.labels)) {
+      labels = fields.labels.map((l) => String(l));
+    }
+    let storyPoints;
+    const spValue = fields.customfield_10016 ?? fields.storyPoints;
+    if (typeof spValue === "number") {
+      storyPoints = spValue;
+    }
+    issues.push({
+      key,
+      summary: String(fields.summary ?? ""),
+      type: String(issuetype?.name ?? "Unknown"),
+      status: String(status?.name ?? "Unknown"),
+      priority: priority?.name ? String(priority.name) : undefined,
+      description: fields.description ? String(fields.description) : undefined,
+      acceptanceCriteria: fields.customfield_10017 ? String(fields.customfield_10017) : undefined,
+      labels,
+      storyPoints
+    });
+  }
+  return issues;
+}
+function normalizeJsonString(jsonStr) {
+  let normalized = jsonStr.split(`
+`).map((line) => line.trim()).join(" ");
+  normalized = normalized.replace(/\s+/g, " ");
+  normalized = normalized.replace(/:\s+"/g, ':"');
+  normalized = normalized.replace(/:\s+\[/g, ":[");
+  normalized = normalized.replace(/:\s+\{/g, ":{");
+  normalized = normalized.replace(/:\s+(\d)/g, ":$1");
+  normalized = normalized.replace(/:\s+(true|false|null)/g, ":$1");
+  normalized = normalized.replace(/\s+,/g, ",");
+  normalized = normalized.replace(/\s+\]/g, "]");
+  normalized = normalized.replace(/\s+\}/g, "}");
+  normalized = normalized.replace(/\[\s+/g, "[");
+  normalized = normalized.replace(/\{\s+/g, "{");
+  return normalized;
+}
+function parseIssuesFromOutput(output) {
+  const issues = [];
+  const markdownMatch = output.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (markdownMatch && markdownMatch[1]) {
+    const jsonContent = markdownMatch[1].trim();
+    const jsonMatch2 = jsonContent.match(/\[[\s\S]*\]/);
+    if (jsonMatch2) {
+      try {
+        const normalizedJson = normalizeJsonString(jsonMatch2[0]);
+        const parsed = JSON.parse(normalizedJson);
+        const parsedIssues = parseIssueArray(parsed);
+        if (parsedIssues.length > 0) {
+          return parsedIssues;
+        }
+      } catch {}
+    }
+  }
+  const jiraApiMatch = output.match(/\{"[^"]*"[^}]*"issues"\s*:\s*\[[\s\S]*?\]\s*[,}]/);
+  if (jiraApiMatch) {
+    try {
+      const issuesArrayMatch = jiraApiMatch[0].match(/"issues"\s*:\s*(\[[\s\S]*?\])/);
+      if (issuesArrayMatch && issuesArrayMatch[1]) {
+        const normalizedJson = normalizeJsonString(issuesArrayMatch[1]);
+        const parsed = JSON.parse(normalizedJson);
+        const parsedIssues = parseJiraApiIssueArray(parsed);
+        if (parsedIssues.length > 0) {
+          return parsedIssues;
+        }
+      }
+    } catch {}
+  }
+  const jsonMatch = output.match(/\[[\s\S]*?\]/);
+  if (jsonMatch) {
+    try {
+      const normalizedJson = normalizeJsonString(jsonMatch[0]);
+      const parsed = JSON.parse(normalizedJson);
+      const parsedIssues = parseIssueArray(parsed);
+      if (parsedIssues.length > 0) {
+        return parsedIssues;
+      }
+    } catch {}
+  }
+  const lines = output.split(`
+`);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("---") || trimmed.toLowerCase().includes("key")) {
+      continue;
+    }
+    if (trimmed.includes("|")) {
+      const parts = trimmed.split("|").map((p) => p.trim());
+      if (parts.length >= 2 && /^[A-Z]+-\d+$/.test(parts[0] ?? "")) {
+        issues.push({
+          key: parts[0] ?? "",
+          summary: parts[1] ?? "",
+          type: parts[2] ?? "Unknown",
+          status: parts[3] ?? "Unknown"
+        });
+      }
+    } else {
+      const keyMatch = trimmed.match(/^([A-Z]+-\d+)[:\s]+(.+)/);
+      if (keyMatch) {
+        issues.push({
+          key: keyMatch[1] ?? "",
+          summary: keyMatch[2] ?? "",
+          type: "Unknown",
+          status: "Unknown"
+        });
+      }
+    }
+  }
+  return issues;
+}
+async function fetchLinkedIssues(issueKey, timeout, verbose, cwd) {
+  const prompt = `Use the Jira MCP server to get all linked issues for issue ${issueKey}.
+Include links of type: blocks, is blocked by, and relates to.
+For each linked issue, include: key, summary, type, status, priority, description, acceptanceCriteria (if available), and the link type.
+Return the results as a JSON array with objects containing: key, summary, type, status, priority, description, acceptanceCriteria, linkType, direction (inward or outward).
+Only return the JSON array, no other text.`;
+  return new Promise((resolve6) => {
+    const args = [
+      "--silent",
+      "--stream",
+      "off",
+      "--allow-all-tools"
+    ];
+    if (verbose) {
+      console.log(`Running: copilot ${args.join(" ")}`);
+      console.log(`Prompt: ${prompt}`);
+    }
+    const proc = spawn7("copilot", args, {
+      cwd: cwd ?? process.cwd(),
+      env: { ...process.env },
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: true
+    });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout?.on("data", (data) => {
+      stdout += data.toString();
+    });
+    proc.stderr?.on("data", (data) => {
+      stderr += data.toString();
+    });
+    proc.stdin?.write(prompt);
+    proc.stdin?.end();
+    proc.on("error", (error48) => {
+      resolve6({
+        success: false,
+        linkedIssues: [],
+        error: `Failed to execute Copilot CLI: ${error48.message}`
+      });
+    });
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        const errorOutput = stderr || stdout;
+        resolve6({
+          success: false,
+          linkedIssues: [],
+          error: errorOutput || `Copilot CLI exited with code ${code}`
+        });
+        return;
+      }
+      const linkedIssues = parseLinkedIssuesFromOutput(stdout);
+      resolve6({
+        success: true,
+        linkedIssues
+      });
+    });
+    const timeoutId = setTimeout(() => {
+      proc.kill("SIGTERM");
+      setTimeout(() => {
+        if (!proc.killed) {
+          proc.kill("SIGKILL");
+        }
+      }, 5000);
+      resolve6({
+        success: false,
+        linkedIssues: [],
+        error: `Request timed out after ${timeout / 1000} seconds.`
+      });
+    }, timeout);
+    proc.on("close", () => {
+      clearTimeout(timeoutId);
+    });
+  });
+}
+function parseLinkedIssuesFromOutput(output) {
+  const linkedIssues = [];
+  const jsonMatch = output.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) {
+    return linkedIssues;
+  }
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    for (const item of parsed) {
+      if (typeof item !== "object" || item === null)
+        continue;
+      const linkObj = item;
+      if (!linkObj.key || typeof linkObj.key !== "string")
+        continue;
+      const linkTypeName = linkObj.linkType ?? linkObj.link_type ?? linkObj.type;
+      if (typeof linkTypeName !== "string")
+        continue;
+      const normalizedType = normalizeLinkType(linkTypeName);
+      if (!normalizedType)
+        continue;
+      linkedIssues.push({
+        issue: {
+          key: String(linkObj.key),
+          summary: String(linkObj.summary ?? ""),
+          type: String(linkObj.issueType ?? linkObj.type ?? "Unknown"),
+          status: String(linkObj.status ?? "Unknown"),
+          priority: linkObj.priority ? String(linkObj.priority) : undefined,
+          description: linkObj.description ? String(linkObj.description) : undefined,
+          acceptanceCriteria: linkObj.acceptanceCriteria ? String(linkObj.acceptanceCriteria) : linkObj.acceptance_criteria ? String(linkObj.acceptance_criteria) : undefined
+        },
+        linkType: normalizedType,
+        direction: linkObj.direction === "inward" ? "inward" : "outward"
+      });
+    }
+  } catch {}
+  return linkedIssues;
+}
+async function fetchJiraIssues(timeout, verbose, cwd) {
+  const prompt = `Use the Jira MCP server to list all issues assigned to me. 
+Return the results as a JSON array with objects containing: key, summary, type, status.
+Only return the JSON array, no other text.`;
+  return new Promise((resolve6) => {
+    const args = [
+      "--silent",
+      "--stream",
+      "off",
+      "--allow-all-tools"
+    ];
+    if (verbose) {
+      console.log(`Running: copilot ${args.join(" ")}`);
+      console.log(`Prompt: ${prompt}`);
+    }
+    const proc = spawn7("copilot", args, {
+      cwd: cwd ?? process.cwd(),
+      env: { ...process.env },
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: true
+    });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout?.on("data", (data) => {
+      stdout += data.toString();
+    });
+    proc.stderr?.on("data", (data) => {
+      stderr += data.toString();
+    });
+    proc.stdin?.write(prompt);
+    proc.stdin?.end();
+    proc.on("error", (error48) => {
+      resolve6({
+        success: false,
+        issues: [],
+        error: `Failed to execute Copilot CLI: ${error48.message}`
+      });
+    });
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        const errorOutput = stderr || stdout;
+        if (errorOutput.includes("MCP") && errorOutput.includes("not found")) {
+          resolve6({
+            success: false,
+            issues: [],
+            error: "Jira MCP server not configured. Please configure the Jira MCP server in Copilot CLI."
+          });
+          return;
+        }
+        if (errorOutput.includes("authentication") || errorOutput.includes("unauthorized")) {
+          resolve6({
+            success: false,
+            issues: [],
+            error: "Jira authentication failed. Please check your Jira credentials in MCP configuration."
+          });
+          return;
+        }
+        if (errorOutput.includes("not found") || errorOutput.includes("command not found")) {
+          resolve6({
+            success: false,
+            issues: [],
+            error: "Copilot CLI not found. Install with: winget install GitHub.Copilot (Windows) or brew install copilot-cli (macOS/Linux)"
+          });
+          return;
+        }
+        resolve6({
+          success: false,
+          issues: [],
+          error: errorOutput || `Copilot CLI exited with code ${code}`
+        });
+        return;
+      }
+      const issues = parseIssuesFromOutput(stdout);
+      if (issues.length === 0 && stdout.trim()) {
+        if (verbose) {
+          console.log("Raw output:", stdout);
+        }
+        if (stdout.toLowerCase().includes("no issues") || stdout.toLowerCase().includes("0 issues") || stdout.includes("[]")) {
+          resolve6({
+            success: true,
+            issues: []
+          });
+          return;
+        }
+      }
+      resolve6({
+        success: true,
+        issues
+      });
+    });
+    const timeoutId = setTimeout(() => {
+      proc.kill("SIGTERM");
+      setTimeout(() => {
+        if (!proc.killed) {
+          proc.kill("SIGKILL");
+        }
+      }, 5000);
+      resolve6({
+        success: false,
+        issues: [],
+        error: `Request timed out after ${timeout / 1000} seconds. The Jira MCP server may be slow or unresponsive.`
+      });
+    }, timeout);
+    proc.on("close", () => {
+      clearTimeout(timeoutId);
+    });
+  });
+}
+function displayIssues(issues) {
+  if (issues.length === 0) {
+    printInfo("No issues assigned to you.");
+    return;
+  }
+  const keyWidth = Math.max("KEY".length, ...issues.map((i) => i.key.length));
+  const typeWidth = Math.max("TYPE".length, ...issues.map((i) => i.type.length));
+  const statusWidth = Math.max("STATUS".length, ...issues.map((i) => i.status.length));
+  const summaryWidth = Math.min(50, Math.max("SUMMARY".length, ...issues.map((i) => i.summary.length)));
+  console.log();
+  const header = [
+    "KEY".padEnd(keyWidth),
+    "TYPE".padEnd(typeWidth),
+    "STATUS".padEnd(statusWidth),
+    "SUMMARY"
+  ].join("  ");
+  console.log(`  ${header}`);
+  console.log(`  ${"-".repeat(keyWidth + typeWidth + statusWidth + summaryWidth + 6)}`);
+  for (const issue2 of issues) {
+    const summary = issue2.summary.length > summaryWidth ? issue2.summary.substring(0, summaryWidth - 3) + "..." : issue2.summary;
+    const row = [
+      issue2.key.padEnd(keyWidth),
+      issue2.type.padEnd(typeWidth),
+      issue2.status.padEnd(statusWidth),
+      summary
+    ].join("  ");
+    console.log(`  ${row}`);
+  }
+  console.log();
+  printSuccess(`Found ${issues.length} issue${issues.length === 1 ? "" : "s"} assigned to you.`);
+}
+async function executeJiraPrdCommand(args) {
+  const parsedArgs = parseJiraPrdArgs(args);
+  const timeout = parsedArgs.timeout ?? 60000;
+  const verbose = parsedArgs.verbose ?? false;
+  printSection("Jira Issues");
+  printInfo("Fetching issues assigned to you via Jira MCP...");
+  const result = await fetchJiraIssues(timeout, verbose, parsedArgs.cwd);
+  if (!result.success) {
+    printError(result.error ?? "Failed to fetch issues from Jira.");
+    console.log();
+    printInfo("Troubleshooting:");
+    console.log("  1. Ensure Copilot CLI is installed: copilot --version");
+    console.log("  2. Verify Jira MCP server is configured in Copilot CLI");
+    console.log("  3. Check your Jira authentication credentials");
+    console.log("  4. Try increasing timeout with --timeout <ms>");
+    process.exit(1);
+  }
+  displayIssues(result.issues);
+  if (result.issues.length > 0) {
+    console.log();
+    printInfo("To create a PRD from a Jira issue, run:");
+    console.log("  ralph-tui create-prd");
+  }
+}
+
+// src/tui/components/IssueSelectionApp.tsx
+var import_react30 = __toESM(require_react(), 1);
+
+// src/tui/components/IssueSelectionView.tsx
+function truncateText8(text, maxWidth) {
+  if (text.length <= maxWidth) {
+    return text;
+  }
+  return text.slice(0, maxWidth - 1) + "\u2026";
+}
+function getIssueStatusColor(status) {
+  const normalizedStatus = status.toLowerCase();
+  if (normalizedStatus.includes("done") || normalizedStatus.includes("closed") || normalizedStatus.includes("resolved")) {
+    return colors2.status.success;
+  }
+  if (normalizedStatus.includes("progress") || normalizedStatus.includes("review")) {
+    return colors2.status.info;
+  }
+  if (normalizedStatus.includes("block")) {
+    return colors2.status.error;
+  }
+  return colors2.fg.secondary;
+}
+function getPriorityColor2(priority) {
+  if (!priority)
+    return colors2.fg.muted;
+  const normalizedPriority = priority.toLowerCase();
+  if (normalizedPriority.includes("high") || normalizedPriority.includes("critical") || normalizedPriority.includes("blocker")) {
+    return colors2.status.error;
+  }
+  if (normalizedPriority.includes("medium") || normalizedPriority.includes("normal")) {
+    return colors2.status.warning;
+  }
+  return colors2.fg.muted;
+}
+function getIssueStatusIndicator(status) {
+  const normalizedStatus = status.toLowerCase();
+  if (normalizedStatus.includes("done") || normalizedStatus.includes("closed") || normalizedStatus.includes("resolved")) {
+    return statusIndicators.done;
+  }
+  if (normalizedStatus.includes("progress")) {
+    return statusIndicators.active;
+  }
+  if (normalizedStatus.includes("block")) {
+    return statusIndicators.blocked;
+  }
+  return statusIndicators.pending;
+}
+function IssueSelectionView({
+  issues,
+  filteredIssues,
+  selectedIndex,
+  filterQuery,
+  isFilterActive,
+  loading = false,
+  error: error48
+}) {
+  if (loading) {
+    return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+      style: {
+        width: "100%",
+        height: "100%",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: colors2.bg.primary
+      },
+      children: /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+        fg: colors2.fg.secondary,
+        children: "Loading issues..."
+      }, undefined, false, undefined, this)
+    }, undefined, false, undefined, this);
+  }
+  if (error48) {
+    return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+      style: {
+        width: "100%",
+        height: "100%",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: colors2.bg.primary
+      },
+      children: [
+        /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+          fg: colors2.status.error,
+          children: [
+            "Error: ",
+            error48
+          ]
+        }, undefined, true, undefined, this),
+        /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+          fg: colors2.fg.muted,
+          children: "Press 'Esc' to go back"
+        }, undefined, false, undefined, this)
+      ]
+    }, undefined, true, undefined, this);
+  }
+  if (issues.length === 0) {
+    return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+      style: {
+        width: "100%",
+        height: "100%",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: colors2.bg.primary
+      },
+      children: [
+        /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+          fg: colors2.fg.secondary,
+          children: "No issues assigned to you"
+        }, undefined, false, undefined, this),
+        /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+          fg: colors2.fg.muted,
+          children: "Check your Jira assignments or MCP configuration"
+        }, undefined, false, undefined, this)
+      ]
+    }, undefined, true, undefined, this);
+  }
+  return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+    style: {
+      width: "100%",
+      height: "100%",
+      flexDirection: "column",
+      backgroundColor: colors2.bg.primary
+    },
+    children: [
+      /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+        style: {
+          width: "100%",
+          height: 3,
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          backgroundColor: colors2.bg.secondary,
+          paddingLeft: 1,
+          paddingRight: 1,
+          border: true,
+          borderColor: colors2.border.normal
+        },
+        children: [
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+            style: { flexDirection: "row", gap: 2 },
+            children: [
+              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+                fg: colors2.accent.primary,
+                children: "Select Issue for PRD"
+              }, undefined, false, undefined, this),
+              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+                fg: colors2.fg.muted,
+                children: [
+                  "(",
+                  filteredIssues.length,
+                  filteredIssues.length !== issues.length ? ` of ${issues.length}` : "",
+                  " issues)"
+                ]
+              }, undefined, true, undefined, this)
+            ]
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            children: "[Jira]"
+          }, undefined, false, undefined, this)
+        ]
+      }, undefined, true, undefined, this),
+      /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+        style: {
+          width: "100%",
+          height: 3,
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: isFilterActive ? colors2.bg.highlight : colors2.bg.secondary,
+          paddingLeft: 1,
+          paddingRight: 1,
+          border: true,
+          borderColor: isFilterActive ? colors2.accent.primary : colors2.border.normal
+        },
+        children: [
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.accent.primary,
+            children: "/ "
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: isFilterActive ? colors2.fg.primary : colors2.fg.muted,
+            children: filterQuery || (isFilterActive ? "" : "Type / to filter...")
+          }, undefined, false, undefined, this),
+          isFilterActive && /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.accent.primary,
+            children: "\u258C"
+          }, undefined, false, undefined, this)
+        ]
+      }, undefined, true, undefined, this),
+      /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+        style: {
+          width: "100%",
+          height: 1,
+          flexDirection: "row",
+          paddingLeft: 3,
+          paddingRight: 1,
+          backgroundColor: colors2.bg.tertiary
+        },
+        children: [
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            style: { width: 12 },
+            children: "KEY"
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            style: { width: 10 },
+            children: "TYPE"
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            style: { width: 10 },
+            children: "PRIORITY"
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            style: { width: 12 },
+            children: "STATUS"
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            children: "SUMMARY"
+          }, undefined, false, undefined, this)
+        ]
+      }, undefined, true, undefined, this),
+      /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+        style: {
+          flexGrow: 1,
+          flexDirection: "column",
+          paddingTop: 1,
+          paddingLeft: 1,
+          paddingRight: 1
+        },
+        children: filteredIssues.length === 0 ? /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+          style: {
+            flexGrow: 1,
+            alignItems: "center",
+            justifyContent: "center"
+          },
+          children: /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            children: [
+              'No issues match filter "',
+              filterQuery,
+              '"'
+            ]
+          }, undefined, true, undefined, this)
+        }, undefined, false, undefined, this) : /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("scrollbox", {
+          style: { flexGrow: 1 },
+          children: filteredIssues.map((issue2, index) => {
+            const isSelected = index === selectedIndex;
+            const statusColor = getIssueStatusColor(issue2.status);
+            const priorityColor = getPriorityColor2(issue2.priority);
+            const statusIndicator = getIssueStatusIndicator(issue2.status);
+            return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+              style: {
+                width: "100%",
+                height: 1,
+                flexDirection: "row",
+                backgroundColor: isSelected ? colors2.bg.highlight : "transparent"
+              },
+              children: [
+                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+                  fg: isSelected ? colors2.accent.primary : "transparent",
+                  children: isSelected ? "\u25B8 " : "  "
+                }, undefined, false, undefined, this),
+                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+                  fg: colors2.accent.tertiary,
+                  style: { width: 12 },
+                  children: truncateText8(issue2.key, 11)
+                }, undefined, false, undefined, this),
+                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+                  fg: colors2.fg.secondary,
+                  style: { width: 10 },
+                  children: truncateText8(issue2.type, 9)
+                }, undefined, false, undefined, this),
+                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+                  fg: priorityColor,
+                  style: { width: 10 },
+                  children: truncateText8(issue2.priority ?? "N/A", 9)
+                }, undefined, false, undefined, this),
+                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+                  fg: statusColor,
+                  style: { width: 12 },
+                  children: [
+                    statusIndicator,
+                    " ",
+                    truncateText8(issue2.status, 9)
+                  ]
+                }, undefined, true, undefined, this),
+                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+                  fg: isSelected ? colors2.fg.primary : colors2.fg.secondary,
+                  children: truncateText8(issue2.summary, 45)
+                }, undefined, false, undefined, this)
+              ]
+            }, issue2.key, true, undefined, this);
+          })
+        }, undefined, false, undefined, this)
+      }, undefined, false, undefined, this),
+      filteredIssues.length > 0 && filteredIssues[selectedIndex] && /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+        style: {
+          width: "100%",
+          height: 4,
+          flexDirection: "column",
+          backgroundColor: colors2.bg.secondary,
+          paddingLeft: 1,
+          paddingRight: 1,
+          border: true,
+          borderColor: colors2.border.normal
+        },
+        children: [
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            children: "Selected:"
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.accent.primary,
+            children: [
+              filteredIssues[selectedIndex].key,
+              ": ",
+              filteredIssues[selectedIndex].summary
+            ]
+          }, undefined, true, undefined, this)
+        ]
+      }, undefined, true, undefined, this),
+      /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
+        style: {
+          width: "100%",
+          height: 3,
+          flexDirection: "row",
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: colors2.bg.secondary,
+          paddingLeft: 1,
+          paddingRight: 1,
+          border: true,
+          borderColor: colors2.border.normal,
+          gap: 2
+        },
+        children: [
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            children: [
+              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("span", {
+                fg: colors2.accent.primary,
+                children: "Enter"
+              }, undefined, false, undefined, this),
+              " Select"
+            ]
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            children: [
+              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("span", {
+                fg: colors2.accent.primary,
+                children: "\u2191\u2193"
+              }, undefined, false, undefined, this),
+              " Navigate"
+            ]
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            children: [
+              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("span", {
+                fg: colors2.accent.primary,
+                children: "/"
+              }, undefined, false, undefined, this),
+              " Filter"
+            ]
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
+            fg: colors2.fg.muted,
+            children: [
+              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("span", {
+                fg: colors2.accent.primary,
+                children: "Esc"
+              }, undefined, false, undefined, this),
+              " ",
+              isFilterActive ? "Clear Filter" : "Cancel"
+            ]
+          }, undefined, true, undefined, this)
+        ]
+      }, undefined, true, undefined, this)
+    ]
+  }, undefined, true, undefined, this);
+}
+
+// src/tui/components/IssueSelectionApp.tsx
+function IssueSelectionApp({
+  issues,
+  onIssueSelected,
+  onCancel,
+  loading = false,
+  error: error48
+}) {
+  const [selectedIndex, setSelectedIndex] = import_react30.useState(0);
+  const [filterQuery, setFilterQuery] = import_react30.useState("");
+  const [isFilterActive, setIsFilterActive] = import_react30.useState(false);
+  const filteredIssues = import_react30.useMemo(() => {
+    if (!filterQuery.trim()) {
+      return issues;
+    }
+    const query = filterQuery.toLowerCase();
+    return issues.filter((issue2) => issue2.key.toLowerCase().includes(query) || issue2.summary.toLowerCase().includes(query) || issue2.type.toLowerCase().includes(query) || issue2.status.toLowerCase().includes(query) || (issue2.priority?.toLowerCase().includes(query) ?? false));
+  }, [issues, filterQuery]);
+  const handleFilterChange = import_react30.useCallback((newQuery) => {
+    setFilterQuery(newQuery);
+    setSelectedIndex(0);
+  }, []);
+  const handleKeyboard = import_react30.useCallback((key) => {
+    if (isFilterActive) {
+      switch (key.name) {
+        case "escape":
+          if (filterQuery) {
+            handleFilterChange("");
+          }
+          setIsFilterActive(false);
+          break;
+        case "return":
+        case "enter":
+          setIsFilterActive(false);
+          if (filteredIssues.length > 0 && filteredIssues[selectedIndex]) {
+            onIssueSelected(filteredIssues[selectedIndex]);
+          }
+          break;
+        case "backspace":
+          if (filterQuery.length > 0) {
+            handleFilterChange(filterQuery.slice(0, -1));
+          }
+          break;
+        case "up":
+          setSelectedIndex((prev) => Math.max(0, prev - 1));
+          break;
+        case "down":
+          setSelectedIndex((prev) => Math.min(filteredIssues.length - 1, prev + 1));
+          break;
+        default:
+          if (key.sequence && key.sequence.length === 1 && !key.ctrl) {
+            handleFilterChange(filterQuery + key.sequence);
+          }
+          break;
+      }
+      return;
+    }
+    switch (key.name) {
+      case "escape":
+      case "q":
+        onCancel();
+        break;
+      case "up":
+      case "k":
+        setSelectedIndex((prev) => Math.max(0, prev - 1));
+        break;
+      case "down":
+      case "j":
+        setSelectedIndex((prev) => Math.min(filteredIssues.length - 1, prev + 1));
+        break;
+      case "return":
+      case "enter":
+        if (filteredIssues.length > 0 && filteredIssues[selectedIndex]) {
+          onIssueSelected(filteredIssues[selectedIndex]);
+        }
+        break;
+      default:
+        if (key.sequence === "/") {
+          setIsFilterActive(true);
+        } else if (key.sequence && key.sequence.length === 1 && /[a-zA-Z0-9]/.test(key.sequence) && !key.ctrl) {
+          setIsFilterActive(true);
+          handleFilterChange(key.sequence);
+        }
+        break;
+    }
+  }, [
+    isFilterActive,
+    filterQuery,
+    filteredIssues,
+    selectedIndex,
+    onIssueSelected,
+    onCancel,
+    handleFilterChange
+  ]);
+  useKeyboard(handleKeyboard);
+  return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV(IssueSelectionView, {
+    issues,
+    filteredIssues,
+    selectedIndex,
+    filterQuery,
+    isFilterActive,
+    loading,
+    error: error48
+  }, undefined, false, undefined, this);
+}
+
+// src/commands/select-issue.tsx
+async function selectIssue(options) {
+  const { issues, loading = false, error: error48 } = options;
+  const issuesWithPriority = issues;
+  const renderer = await createCliRenderer({
+    exitOnCtrlC: false
+  });
+  const root = createRoot(renderer);
+  return new Promise((resolve6) => {
+    const handleIssueSelected = (issue2) => {
+      root.unmount();
+      renderer.destroy();
+      resolve6({ selected: true, issue: issue2 });
+    };
+    const handleCancel = () => {
+      root.unmount();
+      renderer.destroy();
+      resolve6({ selected: false });
+    };
+    root.render(/* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV(IssueSelectionApp, {
+      issues: issuesWithPriority,
+      loading,
+      error: error48,
+      onIssueSelected: handleIssueSelected,
+      onCancel: handleCancel
+    }, undefined, false, undefined, this));
+  });
+}
+async function selectIssueInteractive(issues) {
+  const result = await selectIssue({ issues });
+  return result.selected && result.issue ? result.issue : null;
+}
+
 // src/commands/create-prd.tsx
+init_prompts();
 function parseCreatePrdArgs(args) {
   const result = {};
   for (let i = 0;i < args.length; i++) {
@@ -91851,6 +93060,8 @@ function parseCreatePrdArgs(args) {
       }
     } else if (arg === "--prd-skill") {
       result.prdSkill = args[++i];
+    } else if (arg === "--jira" || arg === "-j") {
+      result.jira = true;
     } else if (arg === "--help" || arg === "-h") {
       printCreatePrdHelp();
       process.exit(0);
@@ -91871,6 +93082,7 @@ Options:
   --agent, -a <name>     Agent plugin to use (default: from config)
   --timeout, -t <ms>     Timeout for AI agent calls (default: 180000)
   --prd-skill <name>     PRD skill folder inside skills_dir
+  --jira, -j             Select a Jira issue as starting context
   --force, -f            Overwrite existing files without prompting
   --help, -h             Show this help message
 
@@ -91883,11 +93095,18 @@ Description:
   3. Generates a markdown PRD with user stories and acceptance criteria
   4. Offers to create tracker tasks (prd.json or beads)
 
+  With --jira flag:
+  - Fetches Jira issues assigned to you via MCP integration
+  - Lets you select an issue from the interactive list
+  - Uses the issue details (description, acceptance criteria, linked issues)
+    as starting context for the PRD conversation
+
   Requires an AI agent to be configured. Run 'ralph-tui setup' to configure one.
 
 Examples:
   ralph-tui create-prd                      # Start AI-powered PRD creation
   ralph-tui prime                           # Alias for create-prd
+  ralph-tui create-prd --jira               # Select Jira issue first
   ralph-tui create-prd --agent copilot       # Use specific agent
   ralph-tui create-prd --output ./docs      # Save PRD to custom directory
 `);
@@ -91975,6 +93194,9 @@ async function runChatMode(parsedArgs) {
   const outputDir = parsedArgs.output || "tasks";
   const timeout = parsedArgs.timeout || 180000;
   console.log(`Using agent: ${agent.meta.name}`);
+  if (parsedArgs.jiraIssue) {
+    console.log(`Jira issue: ${parsedArgs.jiraIssue.key}`);
+  }
   console.log("");
   const renderer = await createCliRenderer({
     exitOnCtrlC: false
@@ -92005,6 +93227,7 @@ async function runChatMode(parsedArgs) {
       timeout,
       prdSkill: parsedArgs.prdSkill,
       prdSkillSource: parsedArgs.prdSkillSource,
+      jiraIssue: parsedArgs.jiraIssue,
       onComplete: handleComplete,
       onCancel: handleCancel,
       onError: handleError
@@ -92023,6 +93246,42 @@ async function executeCreatePrdCommand(args) {
       process.exit(1);
     }
     parsedArgs.prdSkillSource = await loadPrdSkillSource(parsedArgs.prdSkill, storedConfig.skills_dir, cwd);
+  }
+  if (parsedArgs.jira) {
+    printSection("Jira Issue Selection");
+    printInfo("Fetching issues assigned to you via Jira MCP...");
+    const timeout = parsedArgs.timeout ?? 60000;
+    const result2 = await fetchJiraIssues(timeout, false, cwd);
+    if (!result2.success) {
+      printError(result2.error ?? "Failed to fetch issues from Jira.");
+      console.log();
+      printInfo("Troubleshooting:");
+      console.log("  1. Ensure Copilot CLI is installed: copilot --version");
+      console.log("  2. Verify Jira MCP server is configured in Copilot CLI");
+      console.log("  3. Check your Jira authentication credentials");
+      console.log("  4. Try increasing timeout with --timeout <ms>");
+      process.exit(1);
+    }
+    if (result2.issues.length === 0) {
+      printError("No issues assigned to you in Jira.");
+      printInfo("Create a Jira issue and assign it to yourself, then try again.");
+      process.exit(1);
+    }
+    const selectedIssue = await selectIssueInteractive(result2.issues);
+    if (!selectedIssue) {
+      printInfo("Issue selection cancelled.");
+      process.exit(0);
+    }
+    printInfo(`Fetching linked issues for ${selectedIssue.key}...`);
+    const linkedResult = await fetchLinkedIssues(selectedIssue.key, timeout, false, cwd);
+    if (linkedResult.success && linkedResult.linkedIssues.length > 0) {
+      selectedIssue.linkedIssues = linkedResult.linkedIssues;
+      printInfo(`Found ${linkedResult.linkedIssues.length} linked issue(s).`);
+    }
+    parsedArgs.jiraIssue = selectedIssue;
+    console.log();
+    printInfo(`Selected: ${selectedIssue.key} - ${selectedIssue.summary}`);
+    console.log();
   }
   const result = await runChatMode(parsedArgs);
   if (!result) {
@@ -92043,7 +93302,7 @@ async function executeCreatePrdCommand(args) {
 // src/commands/convert.ts
 import { readFile as readFile12, writeFile as writeFile11, access as access16, constants as constants16, mkdir as mkdir10 } from "fs/promises";
 import { resolve as resolve7, dirname as dirname8 } from "path";
-import { spawn as spawn7 } from "child_process";
+import { spawn as spawn8 } from "child_process";
 init_prompts();
 function parseConvertArgs(args) {
   let to;
@@ -92152,7 +93411,7 @@ async function fileExists3(path5) {
 }
 async function execBd3(args, cwd) {
   return new Promise((resolve8) => {
-    const proc = spawn7("bd", args, {
+    const proc = spawn8("bd", args, {
       cwd,
       env: { ...process.env },
       stdio: ["ignore", "pipe", "pipe"]
@@ -92583,1124 +93842,6 @@ async function executeDocsCommand(args) {
   } else {
     console.log("Documentation opened in your default browser.");
   }
-}
-// src/commands/jira-prd.ts
-init_prompts();
-import { spawn as spawn8 } from "child_process";
-function parseJiraPrdArgs(args) {
-  const result = {};
-  for (let i = 0;i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "--cwd" || arg === "-C") {
-      result.cwd = args[++i];
-    } else if (arg === "--timeout" || arg === "-t") {
-      const timeout = parseInt(args[++i] ?? "", 10);
-      if (!isNaN(timeout)) {
-        result.timeout = timeout;
-      }
-    } else if (arg === "--verbose" || arg === "-v") {
-      result.verbose = true;
-    } else if (arg === "--help" || arg === "-h") {
-      printJiraPrdHelp();
-      process.exit(0);
-    }
-  }
-  return result;
-}
-function printJiraPrdHelp() {
-  console.log(`
-ralph-tui jira-prd - Fetch Jira issues assigned to you for PRD generation
-
-Usage: ralph-tui jira-prd [options]
-
-Options:
-  --cwd, -C <path>     Working directory (default: current directory)
-  --timeout, -t <ms>   Timeout for MCP calls (default: 60000)
-  --verbose, -v        Show detailed output
-  --help, -h           Show this help message
-
-Description:
-  Connects to the Jira MCP server through Copilot CLI integration and
-  retrieves all issues assigned to the current user. Displays a list
-  of issues with their key, summary, type, and status.
-
-  This command is useful for reviewing available work before starting
-  PRD generation with 'ralph-tui create-prd'.
-
-Prerequisites:
-  - Copilot CLI must be installed and configured
-  - Jira MCP server must be configured in Copilot CLI
-  - User must be authenticated with Jira
-
-Examples:
-  ralph-tui jira-prd                    # Fetch assigned issues
-  ralph-tui jira-prd --verbose          # Show detailed output
-  ralph-tui jira-prd --timeout 120000   # Extended timeout for slow connections
-`);
-}
-function normalizeLinkType(linkTypeName) {
-  const normalized = linkTypeName.toLowerCase().trim();
-  if (normalized.includes("blocks") && !normalized.includes("blocked by")) {
-    return "blocks";
-  }
-  if (normalized.includes("blocked by") || normalized.includes("is blocked")) {
-    return "is blocked by";
-  }
-  if (normalized.includes("relates") || normalized.includes("related")) {
-    return "relates to";
-  }
-  return null;
-}
-function parseLinkedIssues(issueObj) {
-  const linkedIssues = [];
-  const linksData = issueObj.issuelinks ?? issueObj.links ?? issueObj.linkedIssues ?? issueObj.linked_issues;
-  if (!Array.isArray(linksData)) {
-    return linkedIssues;
-  }
-  for (const link2 of linksData) {
-    if (typeof link2 !== "object" || link2 === null)
-      continue;
-    const linkObj = link2;
-    const typeObj = linkObj.type;
-    const linkTypeName = typeObj?.name ?? typeObj?.outward ?? typeObj?.inward ?? linkObj.linkType ?? linkObj.type;
-    if (typeof linkTypeName !== "string")
-      continue;
-    const normalizedType = normalizeLinkType(linkTypeName);
-    if (!normalizedType)
-      continue;
-    const inwardIssue = linkObj.inwardIssue;
-    const outwardIssue = linkObj.outwardIssue;
-    if (inwardIssue && typeof inwardIssue.key === "string") {
-      const fields = inwardIssue.fields;
-      const issuetype = fields?.issuetype;
-      const status = fields?.status;
-      const priority = fields?.priority;
-      linkedIssues.push({
-        issue: {
-          key: String(inwardIssue.key),
-          summary: String(fields?.summary ?? inwardIssue.summary ?? ""),
-          type: String(issuetype?.name ?? inwardIssue.type ?? "Unknown"),
-          status: String(status?.name ?? inwardIssue.status ?? "Unknown"),
-          priority: priority?.name ? String(priority.name) : inwardIssue.priority ? String(inwardIssue.priority) : undefined,
-          description: fields?.description ? String(fields.description) : inwardIssue.description ? String(inwardIssue.description) : undefined
-        },
-        linkType: normalizedType,
-        direction: "inward"
-      });
-    }
-    if (outwardIssue && typeof outwardIssue.key === "string") {
-      const fields = outwardIssue.fields;
-      const issuetype = fields?.issuetype;
-      const status = fields?.status;
-      const priority = fields?.priority;
-      linkedIssues.push({
-        issue: {
-          key: String(outwardIssue.key),
-          summary: String(fields?.summary ?? outwardIssue.summary ?? ""),
-          type: String(issuetype?.name ?? outwardIssue.type ?? "Unknown"),
-          status: String(status?.name ?? outwardIssue.status ?? "Unknown"),
-          priority: priority?.name ? String(priority.name) : outwardIssue.priority ? String(outwardIssue.priority) : undefined,
-          description: fields?.description ? String(fields.description) : outwardIssue.description ? String(outwardIssue.description) : undefined
-        },
-        linkType: normalizedType,
-        direction: "outward"
-      });
-    }
-    if (!inwardIssue && !outwardIssue && linkObj.key && typeof linkObj.key === "string") {
-      linkedIssues.push({
-        issue: {
-          key: String(linkObj.key),
-          summary: String(linkObj.summary ?? ""),
-          type: String(linkObj.issueType ?? linkObj.type ?? "Unknown"),
-          status: String(linkObj.status ?? "Unknown"),
-          priority: linkObj.priority ? String(linkObj.priority) : undefined,
-          description: linkObj.description ? String(linkObj.description) : undefined
-        },
-        linkType: normalizedType,
-        direction: linkObj.direction === "inward" ? "inward" : "outward"
-      });
-    }
-  }
-  return linkedIssues;
-}
-function parseIssueArray(parsed) {
-  const issues = [];
-  for (const item of parsed) {
-    if (typeof item === "object" && item !== null && "key" in item && typeof item.key === "string") {
-      const issueObj = item;
-      let labels;
-      if (Array.isArray(issueObj.labels)) {
-        labels = issueObj.labels.map((l) => String(l));
-      } else if (typeof issueObj.labels === "string" && issueObj.labels) {
-        labels = issueObj.labels.split(",").map((l) => l.trim()).filter(Boolean);
-      }
-      let storyPoints;
-      const spValue = issueObj.storyPoints ?? issueObj.story_points ?? issueObj.customfield_10016;
-      if (typeof spValue === "number") {
-        storyPoints = spValue;
-      } else if (typeof spValue === "string") {
-        const parsedSp = parseFloat(spValue);
-        if (!isNaN(parsedSp)) {
-          storyPoints = parsedSp;
-        }
-      }
-      const linkedIssues = parseLinkedIssues(issueObj);
-      issues.push({
-        key: String(issueObj.key),
-        summary: String(issueObj.summary ?? issueObj.title ?? ""),
-        type: String(issueObj.type ?? issueObj.issuetype ?? "Unknown"),
-        status: String(issueObj.status ?? "Unknown"),
-        priority: issueObj.priority ? String(issueObj.priority) : undefined,
-        description: issueObj.description ? String(issueObj.description) : undefined,
-        acceptanceCriteria: issueObj.acceptanceCriteria ? String(issueObj.acceptanceCriteria) : issueObj.acceptance_criteria ? String(issueObj.acceptance_criteria) : issueObj.customfield_10017 ? String(issueObj.customfield_10017) : undefined,
-        labels,
-        storyPoints,
-        linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined
-      });
-    }
-  }
-  return issues;
-}
-function parseJiraApiIssueArray(parsed) {
-  const issues = [];
-  for (const item of parsed) {
-    if (typeof item !== "object" || item === null)
-      continue;
-    const issueObj = item;
-    const key = issueObj.key;
-    if (typeof key !== "string")
-      continue;
-    const fields = issueObj.fields;
-    if (!fields) {
-      if (issueObj.summary) {
-        issues.push({
-          key,
-          summary: String(issueObj.summary ?? ""),
-          type: String(issueObj.type ?? issueObj.issuetype ?? "Unknown"),
-          status: String(issueObj.status ?? "Unknown"),
-          priority: issueObj.priority ? String(issueObj.priority) : undefined,
-          description: issueObj.description ? String(issueObj.description) : undefined
-        });
-      }
-      continue;
-    }
-    const issuetype = fields.issuetype;
-    const status = fields.status;
-    const priority = fields.priority;
-    let labels;
-    if (Array.isArray(fields.labels)) {
-      labels = fields.labels.map((l) => String(l));
-    }
-    let storyPoints;
-    const spValue = fields.customfield_10016 ?? fields.storyPoints;
-    if (typeof spValue === "number") {
-      storyPoints = spValue;
-    }
-    issues.push({
-      key,
-      summary: String(fields.summary ?? ""),
-      type: String(issuetype?.name ?? "Unknown"),
-      status: String(status?.name ?? "Unknown"),
-      priority: priority?.name ? String(priority.name) : undefined,
-      description: fields.description ? String(fields.description) : undefined,
-      acceptanceCriteria: fields.customfield_10017 ? String(fields.customfield_10017) : undefined,
-      labels,
-      storyPoints
-    });
-  }
-  return issues;
-}
-function normalizeJsonString(jsonStr) {
-  let normalized = jsonStr.split(`
-`).map((line) => line.trim()).join(" ");
-  normalized = normalized.replace(/\s+/g, " ");
-  normalized = normalized.replace(/:\s+"/g, ':"');
-  normalized = normalized.replace(/:\s+\[/g, ":[");
-  normalized = normalized.replace(/:\s+\{/g, ":{");
-  normalized = normalized.replace(/:\s+(\d)/g, ":$1");
-  normalized = normalized.replace(/:\s+(true|false|null)/g, ":$1");
-  normalized = normalized.replace(/\s+,/g, ",");
-  normalized = normalized.replace(/\s+\]/g, "]");
-  normalized = normalized.replace(/\s+\}/g, "}");
-  normalized = normalized.replace(/\[\s+/g, "[");
-  normalized = normalized.replace(/\{\s+/g, "{");
-  return normalized;
-}
-function parseIssuesFromOutput(output) {
-  const issues = [];
-  const markdownMatch = output.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (markdownMatch && markdownMatch[1]) {
-    const jsonContent = markdownMatch[1].trim();
-    const jsonMatch2 = jsonContent.match(/\[[\s\S]*\]/);
-    if (jsonMatch2) {
-      try {
-        const normalizedJson = normalizeJsonString(jsonMatch2[0]);
-        const parsed = JSON.parse(normalizedJson);
-        const parsedIssues = parseIssueArray(parsed);
-        if (parsedIssues.length > 0) {
-          return parsedIssues;
-        }
-      } catch {}
-    }
-  }
-  const jiraApiMatch = output.match(/\{"[^"]*"[^}]*"issues"\s*:\s*\[[\s\S]*?\]\s*[,}]/);
-  if (jiraApiMatch) {
-    try {
-      const issuesArrayMatch = jiraApiMatch[0].match(/"issues"\s*:\s*(\[[\s\S]*?\])/);
-      if (issuesArrayMatch && issuesArrayMatch[1]) {
-        const normalizedJson = normalizeJsonString(issuesArrayMatch[1]);
-        const parsed = JSON.parse(normalizedJson);
-        const parsedIssues = parseJiraApiIssueArray(parsed);
-        if (parsedIssues.length > 0) {
-          return parsedIssues;
-        }
-      }
-    } catch {}
-  }
-  const jsonMatch = output.match(/\[[\s\S]*?\]/);
-  if (jsonMatch) {
-    try {
-      const normalizedJson = normalizeJsonString(jsonMatch[0]);
-      const parsed = JSON.parse(normalizedJson);
-      const parsedIssues = parseIssueArray(parsed);
-      if (parsedIssues.length > 0) {
-        return parsedIssues;
-      }
-    } catch {}
-  }
-  const lines = output.split(`
-`);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("---") || trimmed.toLowerCase().includes("key")) {
-      continue;
-    }
-    if (trimmed.includes("|")) {
-      const parts = trimmed.split("|").map((p) => p.trim());
-      if (parts.length >= 2 && /^[A-Z]+-\d+$/.test(parts[0] ?? "")) {
-        issues.push({
-          key: parts[0] ?? "",
-          summary: parts[1] ?? "",
-          type: parts[2] ?? "Unknown",
-          status: parts[3] ?? "Unknown"
-        });
-      }
-    } else {
-      const keyMatch = trimmed.match(/^([A-Z]+-\d+)[:\s]+(.+)/);
-      if (keyMatch) {
-        issues.push({
-          key: keyMatch[1] ?? "",
-          summary: keyMatch[2] ?? "",
-          type: "Unknown",
-          status: "Unknown"
-        });
-      }
-    }
-  }
-  return issues;
-}
-async function fetchLinkedIssues(issueKey, timeout, verbose, cwd) {
-  const prompt = `Use the Jira MCP server to get all linked issues for issue ${issueKey}.
-Include links of type: blocks, is blocked by, and relates to.
-For each linked issue, include: key, summary, type, status, priority, description, acceptanceCriteria (if available), and the link type.
-Return the results as a JSON array with objects containing: key, summary, type, status, priority, description, acceptanceCriteria, linkType, direction (inward or outward).
-Only return the JSON array, no other text.`;
-  return new Promise((resolve8) => {
-    const args = [
-      "--silent",
-      "--stream",
-      "off",
-      "--allow-all-tools"
-    ];
-    if (verbose) {
-      console.log(`Running: copilot ${args.join(" ")}`);
-      console.log(`Prompt: ${prompt}`);
-    }
-    const proc = spawn8("copilot", args, {
-      cwd: cwd ?? process.cwd(),
-      env: { ...process.env },
-      stdio: ["pipe", "pipe", "pipe"],
-      shell: true
-    });
-    let stdout = "";
-    let stderr = "";
-    proc.stdout?.on("data", (data) => {
-      stdout += data.toString();
-    });
-    proc.stderr?.on("data", (data) => {
-      stderr += data.toString();
-    });
-    proc.stdin?.write(prompt);
-    proc.stdin?.end();
-    proc.on("error", (error48) => {
-      resolve8({
-        success: false,
-        linkedIssues: [],
-        error: `Failed to execute Copilot CLI: ${error48.message}`
-      });
-    });
-    proc.on("close", (code) => {
-      if (code !== 0) {
-        const errorOutput = stderr || stdout;
-        resolve8({
-          success: false,
-          linkedIssues: [],
-          error: errorOutput || `Copilot CLI exited with code ${code}`
-        });
-        return;
-      }
-      const linkedIssues = parseLinkedIssuesFromOutput(stdout);
-      resolve8({
-        success: true,
-        linkedIssues
-      });
-    });
-    const timeoutId = setTimeout(() => {
-      proc.kill("SIGTERM");
-      setTimeout(() => {
-        if (!proc.killed) {
-          proc.kill("SIGKILL");
-        }
-      }, 5000);
-      resolve8({
-        success: false,
-        linkedIssues: [],
-        error: `Request timed out after ${timeout / 1000} seconds.`
-      });
-    }, timeout);
-    proc.on("close", () => {
-      clearTimeout(timeoutId);
-    });
-  });
-}
-function parseLinkedIssuesFromOutput(output) {
-  const linkedIssues = [];
-  const jsonMatch = output.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    return linkedIssues;
-  }
-  try {
-    const parsed = JSON.parse(jsonMatch[0]);
-    for (const item of parsed) {
-      if (typeof item !== "object" || item === null)
-        continue;
-      const linkObj = item;
-      if (!linkObj.key || typeof linkObj.key !== "string")
-        continue;
-      const linkTypeName = linkObj.linkType ?? linkObj.link_type ?? linkObj.type;
-      if (typeof linkTypeName !== "string")
-        continue;
-      const normalizedType = normalizeLinkType(linkTypeName);
-      if (!normalizedType)
-        continue;
-      linkedIssues.push({
-        issue: {
-          key: String(linkObj.key),
-          summary: String(linkObj.summary ?? ""),
-          type: String(linkObj.issueType ?? linkObj.type ?? "Unknown"),
-          status: String(linkObj.status ?? "Unknown"),
-          priority: linkObj.priority ? String(linkObj.priority) : undefined,
-          description: linkObj.description ? String(linkObj.description) : undefined,
-          acceptanceCriteria: linkObj.acceptanceCriteria ? String(linkObj.acceptanceCriteria) : linkObj.acceptance_criteria ? String(linkObj.acceptance_criteria) : undefined
-        },
-        linkType: normalizedType,
-        direction: linkObj.direction === "inward" ? "inward" : "outward"
-      });
-    }
-  } catch {}
-  return linkedIssues;
-}
-async function fetchJiraIssues(timeout, verbose, cwd) {
-  const prompt = `Use the Jira MCP server to list all issues assigned to me. 
-Return the results as a JSON array with objects containing: key, summary, type, status.
-Only return the JSON array, no other text.`;
-  return new Promise((resolve8) => {
-    const args = [
-      "--silent",
-      "--stream",
-      "off",
-      "--allow-all-tools"
-    ];
-    if (verbose) {
-      console.log(`Running: copilot ${args.join(" ")}`);
-      console.log(`Prompt: ${prompt}`);
-    }
-    const proc = spawn8("copilot", args, {
-      cwd: cwd ?? process.cwd(),
-      env: { ...process.env },
-      stdio: ["pipe", "pipe", "pipe"],
-      shell: true
-    });
-    let stdout = "";
-    let stderr = "";
-    proc.stdout?.on("data", (data) => {
-      stdout += data.toString();
-    });
-    proc.stderr?.on("data", (data) => {
-      stderr += data.toString();
-    });
-    proc.stdin?.write(prompt);
-    proc.stdin?.end();
-    proc.on("error", (error48) => {
-      resolve8({
-        success: false,
-        issues: [],
-        error: `Failed to execute Copilot CLI: ${error48.message}`
-      });
-    });
-    proc.on("close", (code) => {
-      if (code !== 0) {
-        const errorOutput = stderr || stdout;
-        if (errorOutput.includes("MCP") && errorOutput.includes("not found")) {
-          resolve8({
-            success: false,
-            issues: [],
-            error: "Jira MCP server not configured. Please configure the Jira MCP server in Copilot CLI."
-          });
-          return;
-        }
-        if (errorOutput.includes("authentication") || errorOutput.includes("unauthorized")) {
-          resolve8({
-            success: false,
-            issues: [],
-            error: "Jira authentication failed. Please check your Jira credentials in MCP configuration."
-          });
-          return;
-        }
-        if (errorOutput.includes("not found") || errorOutput.includes("command not found")) {
-          resolve8({
-            success: false,
-            issues: [],
-            error: "Copilot CLI not found. Install with: winget install GitHub.Copilot (Windows) or brew install copilot-cli (macOS/Linux)"
-          });
-          return;
-        }
-        resolve8({
-          success: false,
-          issues: [],
-          error: errorOutput || `Copilot CLI exited with code ${code}`
-        });
-        return;
-      }
-      const issues = parseIssuesFromOutput(stdout);
-      if (issues.length === 0 && stdout.trim()) {
-        if (verbose) {
-          console.log("Raw output:", stdout);
-        }
-        if (stdout.toLowerCase().includes("no issues") || stdout.toLowerCase().includes("0 issues") || stdout.includes("[]")) {
-          resolve8({
-            success: true,
-            issues: []
-          });
-          return;
-        }
-      }
-      resolve8({
-        success: true,
-        issues
-      });
-    });
-    const timeoutId = setTimeout(() => {
-      proc.kill("SIGTERM");
-      setTimeout(() => {
-        if (!proc.killed) {
-          proc.kill("SIGKILL");
-        }
-      }, 5000);
-      resolve8({
-        success: false,
-        issues: [],
-        error: `Request timed out after ${timeout / 1000} seconds. The Jira MCP server may be slow or unresponsive.`
-      });
-    }, timeout);
-    proc.on("close", () => {
-      clearTimeout(timeoutId);
-    });
-  });
-}
-function displayIssues(issues) {
-  if (issues.length === 0) {
-    printInfo("No issues assigned to you.");
-    return;
-  }
-  const keyWidth = Math.max("KEY".length, ...issues.map((i) => i.key.length));
-  const typeWidth = Math.max("TYPE".length, ...issues.map((i) => i.type.length));
-  const statusWidth = Math.max("STATUS".length, ...issues.map((i) => i.status.length));
-  const summaryWidth = Math.min(50, Math.max("SUMMARY".length, ...issues.map((i) => i.summary.length)));
-  console.log();
-  const header = [
-    "KEY".padEnd(keyWidth),
-    "TYPE".padEnd(typeWidth),
-    "STATUS".padEnd(statusWidth),
-    "SUMMARY"
-  ].join("  ");
-  console.log(`  ${header}`);
-  console.log(`  ${"-".repeat(keyWidth + typeWidth + statusWidth + summaryWidth + 6)}`);
-  for (const issue2 of issues) {
-    const summary = issue2.summary.length > summaryWidth ? issue2.summary.substring(0, summaryWidth - 3) + "..." : issue2.summary;
-    const row = [
-      issue2.key.padEnd(keyWidth),
-      issue2.type.padEnd(typeWidth),
-      issue2.status.padEnd(statusWidth),
-      summary
-    ].join("  ");
-    console.log(`  ${row}`);
-  }
-  console.log();
-  printSuccess(`Found ${issues.length} issue${issues.length === 1 ? "" : "s"} assigned to you.`);
-}
-async function executeJiraPrdCommand(args) {
-  const parsedArgs = parseJiraPrdArgs(args);
-  const timeout = parsedArgs.timeout ?? 60000;
-  const verbose = parsedArgs.verbose ?? false;
-  printSection("Jira Issues");
-  printInfo("Fetching issues assigned to you via Jira MCP...");
-  const result = await fetchJiraIssues(timeout, verbose, parsedArgs.cwd);
-  if (!result.success) {
-    printError(result.error ?? "Failed to fetch issues from Jira.");
-    console.log();
-    printInfo("Troubleshooting:");
-    console.log("  1. Ensure Copilot CLI is installed: copilot --version");
-    console.log("  2. Verify Jira MCP server is configured in Copilot CLI");
-    console.log("  3. Check your Jira authentication credentials");
-    console.log("  4. Try increasing timeout with --timeout <ms>");
-    process.exit(1);
-  }
-  displayIssues(result.issues);
-  if (result.issues.length > 0) {
-    console.log();
-    printInfo("To create a PRD from a Jira issue, run:");
-    console.log("  ralph-tui create-prd");
-  }
-}
-// src/tui/components/IssueSelectionApp.tsx
-var import_react31 = __toESM(require_react(), 1);
-
-// src/tui/components/IssueSelectionView.tsx
-function truncateText8(text, maxWidth) {
-  if (text.length <= maxWidth) {
-    return text;
-  }
-  return text.slice(0, maxWidth - 1) + "\u2026";
-}
-function getIssueStatusColor(status) {
-  const normalizedStatus = status.toLowerCase();
-  if (normalizedStatus.includes("done") || normalizedStatus.includes("closed") || normalizedStatus.includes("resolved")) {
-    return colors2.status.success;
-  }
-  if (normalizedStatus.includes("progress") || normalizedStatus.includes("review")) {
-    return colors2.status.info;
-  }
-  if (normalizedStatus.includes("block")) {
-    return colors2.status.error;
-  }
-  return colors2.fg.secondary;
-}
-function getPriorityColor2(priority) {
-  if (!priority)
-    return colors2.fg.muted;
-  const normalizedPriority = priority.toLowerCase();
-  if (normalizedPriority.includes("high") || normalizedPriority.includes("critical") || normalizedPriority.includes("blocker")) {
-    return colors2.status.error;
-  }
-  if (normalizedPriority.includes("medium") || normalizedPriority.includes("normal")) {
-    return colors2.status.warning;
-  }
-  return colors2.fg.muted;
-}
-function getIssueStatusIndicator(status) {
-  const normalizedStatus = status.toLowerCase();
-  if (normalizedStatus.includes("done") || normalizedStatus.includes("closed") || normalizedStatus.includes("resolved")) {
-    return statusIndicators.done;
-  }
-  if (normalizedStatus.includes("progress")) {
-    return statusIndicators.active;
-  }
-  if (normalizedStatus.includes("block")) {
-    return statusIndicators.blocked;
-  }
-  return statusIndicators.pending;
-}
-function IssueSelectionView({
-  issues,
-  filteredIssues,
-  selectedIndex,
-  filterQuery,
-  isFilterActive,
-  loading = false,
-  error: error48
-}) {
-  if (loading) {
-    return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-      style: {
-        width: "100%",
-        height: "100%",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: colors2.bg.primary
-      },
-      children: /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-        fg: colors2.fg.secondary,
-        children: "Loading issues..."
-      }, undefined, false, undefined, this)
-    }, undefined, false, undefined, this);
-  }
-  if (error48) {
-    return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-      style: {
-        width: "100%",
-        height: "100%",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: colors2.bg.primary
-      },
-      children: [
-        /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-          fg: colors2.status.error,
-          children: [
-            "Error: ",
-            error48
-          ]
-        }, undefined, true, undefined, this),
-        /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-          fg: colors2.fg.muted,
-          children: "Press 'Esc' to go back"
-        }, undefined, false, undefined, this)
-      ]
-    }, undefined, true, undefined, this);
-  }
-  if (issues.length === 0) {
-    return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-      style: {
-        width: "100%",
-        height: "100%",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: colors2.bg.primary
-      },
-      children: [
-        /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-          fg: colors2.fg.secondary,
-          children: "No issues assigned to you"
-        }, undefined, false, undefined, this),
-        /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-          fg: colors2.fg.muted,
-          children: "Check your Jira assignments or MCP configuration"
-        }, undefined, false, undefined, this)
-      ]
-    }, undefined, true, undefined, this);
-  }
-  return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-    style: {
-      width: "100%",
-      height: "100%",
-      flexDirection: "column",
-      backgroundColor: colors2.bg.primary
-    },
-    children: [
-      /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-        style: {
-          width: "100%",
-          height: 3,
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-          backgroundColor: colors2.bg.secondary,
-          paddingLeft: 1,
-          paddingRight: 1,
-          border: true,
-          borderColor: colors2.border.normal
-        },
-        children: [
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-            style: { flexDirection: "row", gap: 2 },
-            children: [
-              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-                fg: colors2.accent.primary,
-                children: "Select Issue for PRD"
-              }, undefined, false, undefined, this),
-              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-                fg: colors2.fg.muted,
-                children: [
-                  "(",
-                  filteredIssues.length,
-                  filteredIssues.length !== issues.length ? ` of ${issues.length}` : "",
-                  " issues)"
-                ]
-              }, undefined, true, undefined, this)
-            ]
-          }, undefined, true, undefined, this),
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            children: "[Jira]"
-          }, undefined, false, undefined, this)
-        ]
-      }, undefined, true, undefined, this),
-      /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-        style: {
-          width: "100%",
-          height: 3,
-          flexDirection: "row",
-          alignItems: "center",
-          backgroundColor: isFilterActive ? colors2.bg.highlight : colors2.bg.secondary,
-          paddingLeft: 1,
-          paddingRight: 1,
-          border: true,
-          borderColor: isFilterActive ? colors2.accent.primary : colors2.border.normal
-        },
-        children: [
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.accent.primary,
-            children: "/ "
-          }, undefined, false, undefined, this),
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: isFilterActive ? colors2.fg.primary : colors2.fg.muted,
-            children: filterQuery || (isFilterActive ? "" : "Type / to filter...")
-          }, undefined, false, undefined, this),
-          isFilterActive && /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.accent.primary,
-            children: "\u258C"
-          }, undefined, false, undefined, this)
-        ]
-      }, undefined, true, undefined, this),
-      /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-        style: {
-          width: "100%",
-          height: 1,
-          flexDirection: "row",
-          paddingLeft: 3,
-          paddingRight: 1,
-          backgroundColor: colors2.bg.tertiary
-        },
-        children: [
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            style: { width: 12 },
-            children: "KEY"
-          }, undefined, false, undefined, this),
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            style: { width: 10 },
-            children: "TYPE"
-          }, undefined, false, undefined, this),
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            style: { width: 10 },
-            children: "PRIORITY"
-          }, undefined, false, undefined, this),
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            style: { width: 12 },
-            children: "STATUS"
-          }, undefined, false, undefined, this),
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            children: "SUMMARY"
-          }, undefined, false, undefined, this)
-        ]
-      }, undefined, true, undefined, this),
-      /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-        style: {
-          flexGrow: 1,
-          flexDirection: "column",
-          paddingTop: 1,
-          paddingLeft: 1,
-          paddingRight: 1
-        },
-        children: filteredIssues.length === 0 ? /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-          style: {
-            flexGrow: 1,
-            alignItems: "center",
-            justifyContent: "center"
-          },
-          children: /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            children: [
-              'No issues match filter "',
-              filterQuery,
-              '"'
-            ]
-          }, undefined, true, undefined, this)
-        }, undefined, false, undefined, this) : /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("scrollbox", {
-          style: { flexGrow: 1 },
-          children: filteredIssues.map((issue2, index) => {
-            const isSelected = index === selectedIndex;
-            const statusColor = getIssueStatusColor(issue2.status);
-            const priorityColor = getPriorityColor2(issue2.priority);
-            const statusIndicator = getIssueStatusIndicator(issue2.status);
-            return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-              style: {
-                width: "100%",
-                height: 1,
-                flexDirection: "row",
-                backgroundColor: isSelected ? colors2.bg.highlight : "transparent"
-              },
-              children: [
-                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-                  fg: isSelected ? colors2.accent.primary : "transparent",
-                  children: isSelected ? "\u25B8 " : "  "
-                }, undefined, false, undefined, this),
-                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-                  fg: colors2.accent.tertiary,
-                  style: { width: 12 },
-                  children: truncateText8(issue2.key, 11)
-                }, undefined, false, undefined, this),
-                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-                  fg: colors2.fg.secondary,
-                  style: { width: 10 },
-                  children: truncateText8(issue2.type, 9)
-                }, undefined, false, undefined, this),
-                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-                  fg: priorityColor,
-                  style: { width: 10 },
-                  children: truncateText8(issue2.priority ?? "N/A", 9)
-                }, undefined, false, undefined, this),
-                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-                  fg: statusColor,
-                  style: { width: 12 },
-                  children: [
-                    statusIndicator,
-                    " ",
-                    truncateText8(issue2.status, 9)
-                  ]
-                }, undefined, true, undefined, this),
-                /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-                  fg: isSelected ? colors2.fg.primary : colors2.fg.secondary,
-                  children: truncateText8(issue2.summary, 45)
-                }, undefined, false, undefined, this)
-              ]
-            }, issue2.key, true, undefined, this);
-          })
-        }, undefined, false, undefined, this)
-      }, undefined, false, undefined, this),
-      filteredIssues.length > 0 && filteredIssues[selectedIndex] && /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-        style: {
-          width: "100%",
-          height: 4,
-          flexDirection: "column",
-          backgroundColor: colors2.bg.secondary,
-          paddingLeft: 1,
-          paddingRight: 1,
-          border: true,
-          borderColor: colors2.border.normal
-        },
-        children: [
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            children: "Selected:"
-          }, undefined, false, undefined, this),
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.accent.primary,
-            children: [
-              filteredIssues[selectedIndex].key,
-              ": ",
-              filteredIssues[selectedIndex].summary
-            ]
-          }, undefined, true, undefined, this)
-        ]
-      }, undefined, true, undefined, this),
-      /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("box", {
-        style: {
-          width: "100%",
-          height: 3,
-          flexDirection: "row",
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: colors2.bg.secondary,
-          paddingLeft: 1,
-          paddingRight: 1,
-          border: true,
-          borderColor: colors2.border.normal,
-          gap: 2
-        },
-        children: [
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            children: [
-              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("span", {
-                fg: colors2.accent.primary,
-                children: "Enter"
-              }, undefined, false, undefined, this),
-              " Select"
-            ]
-          }, undefined, true, undefined, this),
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            children: [
-              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("span", {
-                fg: colors2.accent.primary,
-                children: "\u2191\u2193"
-              }, undefined, false, undefined, this),
-              " Navigate"
-            ]
-          }, undefined, true, undefined, this),
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            children: [
-              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("span", {
-                fg: colors2.accent.primary,
-                children: "/"
-              }, undefined, false, undefined, this),
-              " Filter"
-            ]
-          }, undefined, true, undefined, this),
-          /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("text", {
-            fg: colors2.fg.muted,
-            children: [
-              /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV("span", {
-                fg: colors2.accent.primary,
-                children: "Esc"
-              }, undefined, false, undefined, this),
-              " ",
-              isFilterActive ? "Clear Filter" : "Cancel"
-            ]
-          }, undefined, true, undefined, this)
-        ]
-      }, undefined, true, undefined, this)
-    ]
-  }, undefined, true, undefined, this);
-}
-
-// src/tui/components/IssueSelectionApp.tsx
-function IssueSelectionApp({
-  issues,
-  onIssueSelected,
-  onCancel,
-  loading = false,
-  error: error48
-}) {
-  const [selectedIndex, setSelectedIndex] = import_react31.useState(0);
-  const [filterQuery, setFilterQuery] = import_react31.useState("");
-  const [isFilterActive, setIsFilterActive] = import_react31.useState(false);
-  const filteredIssues = import_react31.useMemo(() => {
-    if (!filterQuery.trim()) {
-      return issues;
-    }
-    const query = filterQuery.toLowerCase();
-    return issues.filter((issue2) => issue2.key.toLowerCase().includes(query) || issue2.summary.toLowerCase().includes(query) || issue2.type.toLowerCase().includes(query) || issue2.status.toLowerCase().includes(query) || (issue2.priority?.toLowerCase().includes(query) ?? false));
-  }, [issues, filterQuery]);
-  const handleFilterChange = import_react31.useCallback((newQuery) => {
-    setFilterQuery(newQuery);
-    setSelectedIndex(0);
-  }, []);
-  const handleKeyboard = import_react31.useCallback((key) => {
-    if (isFilterActive) {
-      switch (key.name) {
-        case "escape":
-          if (filterQuery) {
-            handleFilterChange("");
-          }
-          setIsFilterActive(false);
-          break;
-        case "return":
-        case "enter":
-          setIsFilterActive(false);
-          if (filteredIssues.length > 0 && filteredIssues[selectedIndex]) {
-            onIssueSelected(filteredIssues[selectedIndex]);
-          }
-          break;
-        case "backspace":
-          if (filterQuery.length > 0) {
-            handleFilterChange(filterQuery.slice(0, -1));
-          }
-          break;
-        case "up":
-          setSelectedIndex((prev) => Math.max(0, prev - 1));
-          break;
-        case "down":
-          setSelectedIndex((prev) => Math.min(filteredIssues.length - 1, prev + 1));
-          break;
-        default:
-          if (key.sequence && key.sequence.length === 1 && !key.ctrl) {
-            handleFilterChange(filterQuery + key.sequence);
-          }
-          break;
-      }
-      return;
-    }
-    switch (key.name) {
-      case "escape":
-      case "q":
-        onCancel();
-        break;
-      case "up":
-      case "k":
-        setSelectedIndex((prev) => Math.max(0, prev - 1));
-        break;
-      case "down":
-      case "j":
-        setSelectedIndex((prev) => Math.min(filteredIssues.length - 1, prev + 1));
-        break;
-      case "return":
-      case "enter":
-        if (filteredIssues.length > 0 && filteredIssues[selectedIndex]) {
-          onIssueSelected(filteredIssues[selectedIndex]);
-        }
-        break;
-      default:
-        if (key.sequence === "/") {
-          setIsFilterActive(true);
-        } else if (key.sequence && key.sequence.length === 1 && /[a-zA-Z0-9]/.test(key.sequence) && !key.ctrl) {
-          setIsFilterActive(true);
-          handleFilterChange(key.sequence);
-        }
-        break;
-    }
-  }, [
-    isFilterActive,
-    filterQuery,
-    filteredIssues,
-    selectedIndex,
-    onIssueSelected,
-    onCancel,
-    handleFilterChange
-  ]);
-  useKeyboard(handleKeyboard);
-  return /* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV(IssueSelectionView, {
-    issues,
-    filteredIssues,
-    selectedIndex,
-    filterQuery,
-    isFilterActive,
-    loading,
-    error: error48
-  }, undefined, false, undefined, this);
-}
-
-// src/commands/select-issue.tsx
-async function selectIssue(options) {
-  const { issues, loading = false, error: error48 } = options;
-  const issuesWithPriority = issues;
-  const renderer = await createCliRenderer({
-    exitOnCtrlC: false
-  });
-  const root = createRoot(renderer);
-  return new Promise((resolve8) => {
-    const handleIssueSelected = (issue2) => {
-      root.unmount();
-      renderer.destroy();
-      resolve8({ selected: true, issue: issue2 });
-    };
-    const handleCancel = () => {
-      root.unmount();
-      renderer.destroy();
-      resolve8({ selected: false });
-    };
-    root.render(/* @__PURE__ */ import_jsx_dev_runtime2.jsxDEV(IssueSelectionApp, {
-      issues: issuesWithPriority,
-      loading,
-      error: error48,
-      onIssueSelected: handleIssueSelected,
-      onCancel: handleCancel
-    }, undefined, false, undefined, this));
-  });
-}
-async function selectIssueInteractive(issues) {
-  const result = await selectIssue({ issues });
-  return result.selected && result.issue ? result.issue : null;
 }
 // src/tui/components/App.tsx
 var import_react35 = __toESM(require_react(), 1);
@@ -94250,6 +94391,7 @@ export {
   formatElapsedTime,
   formatDuration5 as formatDuration,
   fetchLinkedIssues,
+  fetchJiraIssues,
   executeTemplateCommand,
   executeStatusCommand,
   executeSetupCommand,
@@ -94294,4 +94436,4 @@ export {
   AgentRegistry
 };
 
-//# debugId=98B40B7C8C4569D364756E2164756E21
+//# debugId=AE5B7AF9BC4ACFFC64756E2164756E21

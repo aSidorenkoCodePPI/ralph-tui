@@ -145,7 +145,7 @@ Examples:
 /**
  * Result of fetching Jira issues.
  */
-interface FetchIssuesResult {
+export interface FetchIssuesResult {
   success: boolean;
   issues: JiraIssue[];
   error?: string;
@@ -691,7 +691,7 @@ function parseLinkedIssuesFromOutput(output: string): JiraLinkedIssue[] {
 /**
  * Fetch Jira issues via Copilot CLI MCP integration.
  */
-async function fetchJiraIssues(
+export async function fetchJiraIssues(
   timeout: number,
   verbose: boolean,
   cwd?: string

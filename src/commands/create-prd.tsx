@@ -2,6 +2,7 @@
  * ABOUTME: Create-PRD command for ralph-tui.
  * Uses AI-powered conversation to create Product Requirements Documents.
  * After PRD generation, shows split view with PRD preview and tracker options.
+ * Supports --jira flag to select a Jira issue as the starting context.
  */
 
 import { createCliRenderer } from '@opentui/core';
@@ -16,6 +17,10 @@ import { getAgentRegistry } from '../plugins/agents/registry.js';
 import { registerBuiltinAgents } from '../plugins/agents/builtin/index.js';
 import type { AgentPlugin, AgentPluginConfig } from '../plugins/agents/types.js';
 import { executeRunCommand } from './run.js';
+import { fetchJiraIssues, fetchLinkedIssues } from './jira-prd.js';
+import type { JiraIssue } from './jira-prd.js';
+import { selectIssueInteractive } from './select-issue.js';
+import { printSection, printInfo, printError } from '../setup/prompts.js';
 
 /**
  * Command-line arguments for the create-prd command.
@@ -42,6 +47,12 @@ export interface CreatePrdArgs {
   prdSkill?: string;
 
   prdSkillSource?: string;
+
+  /** Enable Jira issue selection mode */
+  jira?: boolean;
+
+  /** Pre-selected Jira issue (when passed from jira selection) */
+  jiraIssue?: JiraIssue;
 }
 
 /**
@@ -73,6 +84,8 @@ export function parseCreatePrdArgs(args: string[]): CreatePrdArgs {
       }
     } else if (arg === '--prd-skill') {
       result.prdSkill = args[++i];
+    } else if (arg === '--jira' || arg === '-j') {
+      result.jira = true;
     } else if (arg === '--help' || arg === '-h') {
       printCreatePrdHelp();
       process.exit(0);
@@ -98,6 +111,7 @@ Options:
   --agent, -a <name>     Agent plugin to use (default: from config)
   --timeout, -t <ms>     Timeout for AI agent calls (default: 180000)
   --prd-skill <name>     PRD skill folder inside skills_dir
+  --jira, -j             Select a Jira issue as starting context
   --force, -f            Overwrite existing files without prompting
   --help, -h             Show this help message
 
@@ -110,11 +124,18 @@ Description:
   3. Generates a markdown PRD with user stories and acceptance criteria
   4. Offers to create tracker tasks (prd.json or beads)
 
+  With --jira flag:
+  - Fetches Jira issues assigned to you via MCP integration
+  - Lets you select an issue from the interactive list
+  - Uses the issue details (description, acceptance criteria, linked issues)
+    as starting context for the PRD conversation
+
   Requires an AI agent to be configured. Run 'ralph-tui setup' to configure one.
 
 Examples:
   ralph-tui create-prd                      # Start AI-powered PRD creation
   ralph-tui prime                           # Alias for create-prd
+  ralph-tui create-prd --jira               # Select Jira issue first
   ralph-tui create-prd --agent copilot       # Use specific agent
   ralph-tui create-prd --output ./docs      # Save PRD to custom directory
 `);
@@ -244,6 +265,9 @@ async function runChatMode(parsedArgs: CreatePrdArgs): Promise<PrdCreationResult
   const timeout = parsedArgs.timeout || 180000;
 
   console.log(`Using agent: ${agent.meta.name}`);
+  if (parsedArgs.jiraIssue) {
+    console.log(`Jira issue: ${parsedArgs.jiraIssue.key}`);
+  }
   console.log('');
 
   // Create renderer and render the chat app
@@ -282,6 +306,7 @@ async function runChatMode(parsedArgs: CreatePrdArgs): Promise<PrdCreationResult
         timeout={timeout}
         prdSkill={parsedArgs.prdSkill}
         prdSkillSource={parsedArgs.prdSkillSource}
+        jiraIssue={parsedArgs.jiraIssue}
         onComplete={handleComplete}
         onCancel={handleCancel}
         onError={handleError}
@@ -293,6 +318,7 @@ async function runChatMode(parsedArgs: CreatePrdArgs): Promise<PrdCreationResult
 /**
  * Execute the create-prd command.
  * Always uses AI-powered chat mode for conversational PRD creation.
+ * If --jira is specified, first shows Jira issue selection.
  * If a tracker format is selected, launches ralph-tui run with the tasks loaded.
  */
 export async function executeCreatePrdCommand(args: string[]): Promise<void> {
@@ -316,6 +342,56 @@ export async function executeCreatePrdCommand(args: string[]): Promise<void> {
       storedConfig.skills_dir,
       cwd
     );
+  }
+
+  // If --jira flag is set, fetch and select a Jira issue first
+  if (parsedArgs.jira) {
+    printSection('Jira Issue Selection');
+    printInfo('Fetching issues assigned to you via Jira MCP...');
+
+    const timeout = parsedArgs.timeout ?? 60000;
+    const result = await fetchJiraIssues(timeout, false, cwd);
+
+    if (!result.success) {
+      printError(result.error ?? 'Failed to fetch issues from Jira.');
+      console.log();
+      printInfo('Troubleshooting:');
+      console.log('  1. Ensure Copilot CLI is installed: copilot --version');
+      console.log('  2. Verify Jira MCP server is configured in Copilot CLI');
+      console.log('  3. Check your Jira authentication credentials');
+      console.log('  4. Try increasing timeout with --timeout <ms>');
+      process.exit(1);
+    }
+
+    if (result.issues.length === 0) {
+      printError('No issues assigned to you in Jira.');
+      printInfo('Create a Jira issue and assign it to yourself, then try again.');
+      process.exit(1);
+    }
+
+    // Show interactive issue selection
+    const selectedIssue = await selectIssueInteractive(result.issues);
+
+    if (!selectedIssue) {
+      printInfo('Issue selection cancelled.');
+      process.exit(0);
+    }
+
+    // Fetch linked issues for the selected issue (blocking/related issues)
+    printInfo(`Fetching linked issues for ${selectedIssue.key}...`);
+    const linkedResult = await fetchLinkedIssues(selectedIssue.key, timeout, false, cwd);
+
+    if (linkedResult.success && linkedResult.linkedIssues.length > 0) {
+      selectedIssue.linkedIssues = linkedResult.linkedIssues;
+      printInfo(`Found ${linkedResult.linkedIssues.length} linked issue(s).`);
+    }
+
+    // Set the selected issue in parsedArgs
+    parsedArgs.jiraIssue = selectedIssue;
+
+    console.log();
+    printInfo(`Selected: ${selectedIssue.key} - ${selectedIssue.summary}`);
+    console.log();
   }
 
   const result = await runChatMode(parsedArgs);

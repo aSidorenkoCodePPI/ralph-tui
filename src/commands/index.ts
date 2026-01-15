@@ -74,9 +74,10 @@ export {
   parseJiraPrdArgs,
   printJiraPrdHelp,
   fetchLinkedIssues,
+  fetchJiraIssues,
 } from './jira-prd.js';
 
-export type { JiraIssue, JiraPrdArgs, JiraLinkedIssue, JiraLinkType } from './jira-prd.js';
+export type { JiraIssue, JiraPrdArgs, JiraLinkedIssue, JiraLinkType, FetchIssuesResult } from './jira-prd.js';
 
 export {
   selectIssue,
