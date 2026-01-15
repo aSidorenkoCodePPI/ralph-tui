@@ -82,6 +82,7 @@ Convert Options:
 
 Learn Options:
   --output, -o <path> Custom output file path (default: ./ralph-context.md)
+  --depth <level>     Analysis depth: shallow, standard (default), or deep
   --json              Output analysis in JSON format
   --verbose, -v       Show detailed analysis output
   --force, -f         Overwrite existing file without confirmation
@@ -93,6 +94,8 @@ Examples:
   ralph-tui convert --to json ./prd.md   # Convert PRD to JSON
   ralph-tui learn                        # Analyze current directory
   ralph-tui learn ./my-project           # Analyze specific directory
+  ralph-tui learn --depth shallow        # Quick structural scan
+  ralph-tui learn --depth deep           # Full code pattern analysis
   ralph-tui learn --output ./docs/ctx.md # Custom output location
   ralph-tui run                          # Start execution with defaults
   ralph-tui run --epic myproject-epic    # Run with specific epic
