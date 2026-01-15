@@ -83,11 +83,6 @@ const DEPENDS_ON_PATTERN = /\*\*Depends on:\*\*\s*(.+)/;
 const CHECKLIST_ITEM_PATTERN = /^[-*]\s+\[[\sx]\]\s+(.+)$/;
 
 /**
- * Pattern to match numbered list items: 1. or 1)
- */
-const NUMBERED_ITEM_PATTERN = /^\d+[.)]\s+(.+)$/;
-
-/**
  * Extract the PRD title from the document.
  */
 function extractTitle(markdown: string): string {
