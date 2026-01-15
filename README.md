@@ -9,8 +9,8 @@ Ralph TUI connects your AI coding assistant (GitHub Copilot CLI, Claude Code, Op
 ## Quick Start
 
 ```powershell
-# Install from GitHub (private repo)
-npm install -g github:aSidorenkoCodePPI/ralph-tui
+# Install from GitHub release (recommended)
+npm install -g https://github.com/aSidorenkoCodePPI/ralph-tui/releases/download/v0.1.6/ralph-tui-0.1.6.tgz
 
 # Setup your project
 cd your-project
