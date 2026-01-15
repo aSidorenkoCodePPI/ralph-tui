@@ -25,7 +25,6 @@
     "lint:fix": "eslint src/ --fix",
     "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
     "dev": "bun run ./src/cli.tsx",
-    "prepare": "bun run build",
     "prepublishOnly": "bun run build",
     "website:dev": "cd website && bun run dev",
     "website:build": "cd website && bun run build",
