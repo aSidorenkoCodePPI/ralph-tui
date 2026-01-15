@@ -12,7 +12,7 @@ package/
 
 # Node.js
 node_modules/
-dist/
+# NOTE: dist/ is NOT ignored - it's included for npm install from GitHub
 *.log
 npm-debug.log*
 pnpm-debug.log*
