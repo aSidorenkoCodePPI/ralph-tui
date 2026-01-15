@@ -100,6 +100,27 @@ export interface LearnResult {
 
   /** Whether file limit was reached */
   truncated: boolean;
+
+  /** Dependency information from manifest files */
+  dependencies: DependencyInfo[];
+
+  /** Detected architectural patterns */
+  architecturalPatterns: string[];
+
+  /** Directory tree representation */
+  directoryTree: string;
+}
+
+/**
+ * Dependency information from manifest files
+ */
+export interface DependencyInfo {
+  /** Source manifest file */
+  source: string;
+  /** Production dependencies */
+  dependencies: Record<string, string>;
+  /** Development dependencies */
+  devDependencies: Record<string, string>;
 }
 
 /**
@@ -114,6 +135,9 @@ export interface LearnArgs {
 
   /** Verbose output */
   verbose: boolean;
+
+  /** Force overwrite existing context file */
+  force: boolean;
 }
 
 /**
@@ -131,18 +155,25 @@ Arguments:
 Options:
   --json              Output in JSON format (machine-readable)
   --verbose, -v       Show detailed analysis output
+  --force, -f         Overwrite existing ralph-context.md without confirmation
   -h, --help          Show this help message
 
 Description:
   Analyzes the project directory so AI agents understand the codebase
-  structure and conventions. The analysis includes:
+  structure and conventions. Generates a ralph-context.md file with:
 
-  - Project type detection (Node.js, Python, Rust, etc.)
-  - File structure overview
-  - Code conventions and patterns
+  - Project overview and type detection
+  - Directory structure representation
+  - Detected languages and frameworks
+  - Dependencies from manifest files (package.json, requirements.txt, etc.)
+  - Identified architectural patterns
   - AGENTS.md file discovery
 
   Supports projects with up to 10,000 files for efficient analysis.
+
+Output:
+  Creates ralph-context.md in the project root by default.
+  If the file exists, prompts for confirmation unless --force is used.
 
 Exit Codes:
   0    Analysis completed successfully
@@ -153,6 +184,7 @@ Examples:
   ralph-tui learn ./my-project       # Analyze specific directory
   ralph-tui learn --json             # JSON output for scripts
   ralph-tui learn -v                 # Verbose output
+  ralph-tui learn --force            # Overwrite without confirmation
 `);
 }
 
@@ -164,6 +196,7 @@ export function parseLearnArgs(args: string[]): LearnArgs {
     path: process.cwd(),
     json: false,
     verbose: false,
+    force: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -176,6 +209,8 @@ export function parseLearnArgs(args: string[]): LearnArgs {
       result.json = true;
     } else if (arg === '--verbose' || arg === '-v') {
       result.verbose = true;
+    } else if (arg === '--force' || arg === '-f') {
+      result.force = true;
     } else if (!arg.startsWith('-')) {
       // Positional argument - treat as path
       result.path = path.resolve(arg);
@@ -290,6 +325,494 @@ function detectConventions(rootPath: string, files: string[]): string[] {
 }
 
 /**
+ * Parse dependencies from manifest files
+ */
+function parseDependencies(rootPath: string, files: string[]): DependencyInfo[] {
+  const deps: DependencyInfo[] = [];
+
+  // Parse package.json (Node.js)
+  if (files.includes('package.json')) {
+    try {
+      const pkgPath = path.join(rootPath, 'package.json');
+      const content = fs.readFileSync(pkgPath, 'utf-8');
+      const pkg = JSON.parse(content);
+      deps.push({
+        source: 'package.json',
+        dependencies: pkg.dependencies || {},
+        devDependencies: pkg.devDependencies || {},
+      });
+    } catch {
+      // Skip on parse error
+    }
+  }
+
+  // Parse requirements.txt (Python)
+  if (files.includes('requirements.txt')) {
+    try {
+      const reqPath = path.join(rootPath, 'requirements.txt');
+      const content = fs.readFileSync(reqPath, 'utf-8');
+      const dependencies: Record<string, string> = {};
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const match = trimmed.match(/^([a-zA-Z0-9_-]+)(?:[>=<~!]+(.+))?$/);
+          if (match) {
+            dependencies[match[1]] = match[2] || '*';
+          }
+        }
+      }
+      deps.push({
+        source: 'requirements.txt',
+        dependencies,
+        devDependencies: {},
+      });
+    } catch {
+      // Skip on parse error
+    }
+  }
+
+  // Parse pyproject.toml (Python)
+  if (files.includes('pyproject.toml')) {
+    try {
+      const tomlPath = path.join(rootPath, 'pyproject.toml');
+      const content = fs.readFileSync(tomlPath, 'utf-8');
+      const dependencies: Record<string, string> = {};
+      const devDependencies: Record<string, string> = {};
+      // Simple TOML parsing for dependencies section
+      const depsMatch = content.match(/\[project\.dependencies\]([\s\S]*?)(?=\[|$)/);
+      if (depsMatch) {
+        for (const line of depsMatch[1].split('\n')) {
+          const match = line.match(/^\s*"?([a-zA-Z0-9_-]+)"?\s*(?:[>=<~!]+\s*"?(.+?)"?)?(?:,|$)/);
+          if (match) {
+            dependencies[match[1]] = match[2] || '*';
+          }
+        }
+      }
+      // Check for dev dependencies
+      const devMatch = content.match(/\[project\.optional-dependencies\]([\s\S]*?)(?=\[|$)/);
+      if (devMatch) {
+        for (const line of devMatch[1].split('\n')) {
+          const match = line.match(/^\s*"?([a-zA-Z0-9_-]+)"?\s*(?:[>=<~!]+\s*"?(.+?)"?)?(?:,|$)/);
+          if (match) {
+            devDependencies[match[1]] = match[2] || '*';
+          }
+        }
+      }
+      if (Object.keys(dependencies).length > 0 || Object.keys(devDependencies).length > 0) {
+        deps.push({
+          source: 'pyproject.toml',
+          dependencies,
+          devDependencies,
+        });
+      }
+    } catch {
+      // Skip on parse error
+    }
+  }
+
+  // Parse Cargo.toml (Rust)
+  if (files.includes('Cargo.toml')) {
+    try {
+      const cargoPath = path.join(rootPath, 'Cargo.toml');
+      const content = fs.readFileSync(cargoPath, 'utf-8');
+      const dependencies: Record<string, string> = {};
+      const devDependencies: Record<string, string> = {};
+      // Simple TOML parsing for [dependencies] section
+      const depsMatch = content.match(/\[dependencies\]([\s\S]*?)(?=\[|$)/);
+      if (depsMatch) {
+        for (const line of depsMatch[1].split('\n')) {
+          const match = line.match(/^\s*([a-zA-Z0-9_-]+)\s*=\s*"?(.+?)"?\s*$/);
+          if (match) {
+            dependencies[match[1]] = match[2];
+          }
+        }
+      }
+      // Check for dev-dependencies
+      const devMatch = content.match(/\[dev-dependencies\]([\s\S]*?)(?=\[|$)/);
+      if (devMatch) {
+        for (const line of devMatch[1].split('\n')) {
+          const match = line.match(/^\s*([a-zA-Z0-9_-]+)\s*=\s*"?(.+?)"?\s*$/);
+          if (match) {
+            devDependencies[match[1]] = match[2];
+          }
+        }
+      }
+      deps.push({
+        source: 'Cargo.toml',
+        dependencies,
+        devDependencies,
+      });
+    } catch {
+      // Skip on parse error
+    }
+  }
+
+  // Parse go.mod (Go)
+  if (files.includes('go.mod')) {
+    try {
+      const goModPath = path.join(rootPath, 'go.mod');
+      const content = fs.readFileSync(goModPath, 'utf-8');
+      const dependencies: Record<string, string> = {};
+      const requireMatch = content.match(/require\s*\(([\s\S]*?)\)/);
+      if (requireMatch) {
+        for (const line of requireMatch[1].split('\n')) {
+          const match = line.match(/^\s*([^\s]+)\s+v?(.+)$/);
+          if (match) {
+            dependencies[match[1]] = match[2];
+          }
+        }
+      }
+      deps.push({
+        source: 'go.mod',
+        dependencies,
+        devDependencies: {},
+      });
+    } catch {
+      // Skip on parse error
+    }
+  }
+
+  // Parse Gemfile (Ruby) - basic parsing
+  if (files.includes('Gemfile')) {
+    try {
+      const gemPath = path.join(rootPath, 'Gemfile');
+      const content = fs.readFileSync(gemPath, 'utf-8');
+      const dependencies: Record<string, string> = {};
+      for (const line of content.split('\n')) {
+        const match = line.match(/^\s*gem\s+['"]([^'"]+)['"]\s*(?:,\s*['"]?([^'"]+)['"]?)?/);
+        if (match) {
+          dependencies[match[1]] = match[2] || '*';
+        }
+      }
+      deps.push({
+        source: 'Gemfile',
+        dependencies,
+        devDependencies: {},
+      });
+    } catch {
+      // Skip on parse error
+    }
+  }
+
+  // Parse composer.json (PHP)
+  if (files.includes('composer.json')) {
+    try {
+      const composerPath = path.join(rootPath, 'composer.json');
+      const content = fs.readFileSync(composerPath, 'utf-8');
+      const composer = JSON.parse(content);
+      deps.push({
+        source: 'composer.json',
+        dependencies: composer.require || {},
+        devDependencies: composer['require-dev'] || {},
+      });
+    } catch {
+      // Skip on parse error
+    }
+  }
+
+  return deps;
+}
+
+/**
+ * Detect architectural patterns from project structure
+ */
+function detectArchitecturalPatterns(rootPath: string, files: string[], topLevelDirs: string[]): string[] {
+  const patterns: string[] = [];
+
+  // MVC pattern
+  const mvcDirs = ['models', 'views', 'controllers', 'model', 'view', 'controller'];
+  if (mvcDirs.some(d => topLevelDirs.includes(d))) {
+    patterns.push('MVC (Model-View-Controller)');
+  }
+
+  // Clean Architecture / Hexagonal
+  const cleanArchDirs = ['domain', 'application', 'infrastructure', 'adapters', 'ports'];
+  if (cleanArchDirs.filter(d => topLevelDirs.includes(d)).length >= 2) {
+    patterns.push('Clean Architecture / Hexagonal');
+  }
+
+  // Component-based (React, Vue, etc.)
+  if (topLevelDirs.includes('components') || topLevelDirs.includes('ui')) {
+    patterns.push('Component-based architecture');
+  }
+
+  // Monorepo patterns
+  if (topLevelDirs.includes('packages') || topLevelDirs.includes('apps') || topLevelDirs.includes('libs')) {
+    patterns.push('Monorepo structure');
+  }
+
+  // Feature-based / Module-based
+  if (topLevelDirs.includes('features') || topLevelDirs.includes('modules')) {
+    patterns.push('Feature-based / Modular architecture');
+  }
+
+  // API patterns
+  if (topLevelDirs.includes('api') || topLevelDirs.includes('routes') || topLevelDirs.includes('endpoints')) {
+    patterns.push('API-centric design');
+  }
+
+  // Layered architecture
+  const layeredDirs = ['services', 'repositories', 'entities'];
+  if (layeredDirs.filter(d => topLevelDirs.includes(d)).length >= 2) {
+    patterns.push('Layered architecture');
+  }
+
+  // Plugin/Extension architecture
+  if (topLevelDirs.includes('plugins') || topLevelDirs.includes('extensions') || topLevelDirs.includes('addons')) {
+    patterns.push('Plugin/Extension architecture');
+  }
+
+  // Check for configuration files suggesting patterns
+  if (files.includes('nx.json')) {
+    patterns.push('Nx workspace (Monorepo)');
+  }
+  if (files.includes('lerna.json')) {
+    patterns.push('Lerna monorepo');
+  }
+  if (files.includes('turbo.json')) {
+    patterns.push('Turborepo');
+  }
+  if (files.includes('pnpm-workspace.yaml')) {
+    patterns.push('PNPM workspace');
+  }
+
+  // Check for serverless patterns
+  if (files.includes('serverless.yml') || files.includes('serverless.yaml') || files.includes('serverless.ts')) {
+    patterns.push('Serverless architecture');
+  }
+
+  // Microservices indicators
+  if (files.includes('docker-compose.yml') || files.includes('docker-compose.yaml')) {
+    const composePath = path.join(rootPath, files.find(f => f.startsWith('docker-compose')) || '');
+    try {
+      const content = fs.readFileSync(composePath, 'utf-8');
+      if ((content.match(/services:/g) || []).length > 0 && content.split('image:').length > 2) {
+        patterns.push('Microservices architecture');
+      }
+    } catch {
+      // Skip
+    }
+  }
+
+  return patterns;
+}
+
+/**
+ * Build directory tree representation (up to 3 levels deep)
+ */
+function buildDirectoryTree(rootPath: string, maxDepth: number = 3): string {
+  const lines: string[] = [];
+
+  function walkDir(dirPath: string, prefix: string, depth: number): void {
+    if (depth > maxDepth) return;
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    // Filter and sort entries
+    const dirs = entries.filter(e => e.isDirectory() && !shouldIgnoreDir(e.name)).sort((a, b) => a.name.localeCompare(b.name));
+    const files = entries.filter(e => e.isFile()).sort((a, b) => a.name.localeCompare(b.name));
+
+    // Limit files shown at each level
+    const maxFiles = depth === 1 ? 15 : 8;
+    const maxDirs = depth === 1 ? 20 : 10;
+    const displayDirs = dirs.slice(0, maxDirs);
+    const displayFiles = files.slice(0, maxFiles);
+
+    const totalItems = displayDirs.length + displayFiles.length;
+    let index = 0;
+
+    for (const dir of displayDirs) {
+      index++;
+      const isLast = index === totalItems && files.length <= maxFiles && dirs.length <= maxDirs;
+      const connector = isLast ? '└── ' : '├── ';
+      lines.push(`${prefix}${connector}${dir.name}/`);
+      walkDir(path.join(dirPath, dir.name), prefix + (isLast ? '    ' : '│   '), depth + 1);
+    }
+
+    for (const file of displayFiles) {
+      index++;
+      const isLast = index === totalItems;
+      const connector = isLast ? '└── ' : '├── ';
+      lines.push(`${prefix}${connector}${file.name}`);
+    }
+
+    // Show truncation message
+    if (dirs.length > maxDirs || files.length > maxFiles) {
+      const remaining = (dirs.length - maxDirs) + (files.length - maxFiles);
+      lines.push(`${prefix}└── ... (${remaining} more items)`);
+    }
+  }
+
+  const rootName = path.basename(rootPath) || rootPath;
+  lines.push(`${rootName}/`);
+  walkDir(rootPath, '', 1);
+
+  return lines.join('\n');
+}
+
+/**
+ * Generate Markdown content for the context file
+ */
+function generateContextMarkdown(result: LearnResult): string {
+  const lines: string[] = [];
+  const timestamp = new Date().toISOString();
+  const projectName = path.basename(result.rootPath);
+
+  // Header
+  lines.push('# Project Context');
+  lines.push('');
+  lines.push(`> Generated by ralph-tui learn on ${timestamp}`);
+  lines.push('');
+
+  // Project Overview
+  lines.push('## Project Overview');
+  lines.push('');
+  lines.push(`- **Name**: ${projectName}`);
+  lines.push(`- **Path**: ${result.rootPath}`);
+  lines.push(`- **Type**: ${result.projectTypes.join(', ')}`);
+  lines.push(`- **Total Files**: ${result.totalFiles.toLocaleString()}${result.truncated ? ' (truncated at 10,000)' : ''}`);
+  lines.push(`- **Total Directories**: ${result.totalDirectories.toLocaleString()}`);
+  lines.push('');
+
+  // Languages and Frameworks
+  lines.push('## Languages and Frameworks');
+  lines.push('');
+  if (Object.keys(result.filesByType).length > 0) {
+    const sortedTypes = Object.entries(result.filesByType)
+      .sort((a, b) => b[1] - a[1]);
+    lines.push('| Language/Type | File Count |');
+    lines.push('|--------------|------------|');
+    for (const [type, count] of sortedTypes) {
+      lines.push(`| ${type} | ${count.toLocaleString()} |`);
+    }
+    lines.push('');
+  } else {
+    lines.push('*No specific language files detected.*');
+    lines.push('');
+  }
+
+  // Directory Structure
+  lines.push('## Directory Structure');
+  lines.push('');
+  lines.push('```');
+  lines.push(result.directoryTree);
+  lines.push('```');
+  lines.push('');
+
+  // Dependencies
+  lines.push('## Dependencies');
+  lines.push('');
+  if (result.dependencies.length > 0) {
+    for (const dep of result.dependencies) {
+      lines.push(`### ${dep.source}`);
+      lines.push('');
+      
+      if (Object.keys(dep.dependencies).length > 0) {
+        lines.push('**Production Dependencies:**');
+        lines.push('');
+        const deps = Object.entries(dep.dependencies).slice(0, 50);
+        for (const [name, version] of deps) {
+          lines.push(`- ${name}: ${version}`);
+        }
+        if (Object.keys(dep.dependencies).length > 50) {
+          lines.push(`- ... and ${Object.keys(dep.dependencies).length - 50} more`);
+        }
+        lines.push('');
+      }
+      
+      if (Object.keys(dep.devDependencies).length > 0) {
+        lines.push('**Development Dependencies:**');
+        lines.push('');
+        const devDeps = Object.entries(dep.devDependencies).slice(0, 30);
+        for (const [name, version] of devDeps) {
+          lines.push(`- ${name}: ${version}`);
+        }
+        if (Object.keys(dep.devDependencies).length > 30) {
+          lines.push(`- ... and ${Object.keys(dep.devDependencies).length - 30} more`);
+        }
+        lines.push('');
+      }
+    }
+  } else {
+    lines.push('*No manifest files detected or no dependencies found.*');
+    lines.push('');
+  }
+
+  // Architectural Patterns
+  lines.push('## Architectural Patterns');
+  lines.push('');
+  if (result.architecturalPatterns.length > 0) {
+    for (const pattern of result.architecturalPatterns) {
+      lines.push(`- ${pattern}`);
+    }
+    lines.push('');
+  } else {
+    lines.push('*No specific architectural patterns detected.*');
+    lines.push('');
+  }
+
+  // Conventions
+  lines.push('## Development Conventions');
+  lines.push('');
+  if (result.conventions.length > 0) {
+    for (const convention of result.conventions) {
+      lines.push(`- ${convention}`);
+    }
+    lines.push('');
+  } else {
+    lines.push('*No specific conventions detected.*');
+    lines.push('');
+  }
+
+  // AGENTS.md files
+  if (result.agentFiles.length > 0) {
+    lines.push('## AI Agent Configuration');
+    lines.push('');
+    lines.push('The following AGENTS.md files were found, which provide guidance for AI agents:');
+    lines.push('');
+    for (const agentFile of result.agentFiles) {
+      lines.push(`- ${agentFile || '(root)'}`);
+    }
+    lines.push('');
+  }
+
+  // Footer
+  lines.push('---');
+  lines.push('');
+  lines.push('*This context file was automatically generated. For best results, review and customize as needed.*');
+
+  return lines.join('\n');
+}
+
+/**
+ * Prompt user for confirmation (simple stdin read)
+ */
+async function promptConfirmation(message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    process.stdout.write(`${message} [y/N] `);
+    
+    // For non-TTY environments, default to no
+    if (!process.stdin.isTTY) {
+      console.log('(non-interactive, defaulting to No)');
+      resolve(false);
+      return;
+    }
+
+    process.stdin.setEncoding('utf8');
+    process.stdin.once('data', (data) => {
+      const answer = data.toString().trim().toLowerCase();
+      resolve(answer === 'y' || answer === 'yes');
+    });
+    process.stdin.resume();
+  });
+}
+
+/**
  * Recursively scan directory for files
  */
 async function scanDirectory(
@@ -381,6 +904,15 @@ export async function analyzeProject(rootPath: string): Promise<LearnResult> {
   // Detect conventions
   const conventions = detectConventions(rootPath, topLevelFiles);
 
+  // Parse dependencies from manifest files
+  const dependencies = parseDependencies(rootPath, topLevelFiles);
+
+  // Detect architectural patterns
+  const architecturalPatterns = detectArchitecturalPatterns(rootPath, topLevelFiles, topLevelDirs);
+
+  // Build directory tree
+  const directoryTree = buildDirectoryTree(rootPath);
+
   // Scan all files
   const scanResult = {
     files: 0,
@@ -416,6 +948,9 @@ export async function analyzeProject(rootPath: string): Promise<LearnResult> {
     agentFiles: scanResult.agentFiles,
     durationMs,
     truncated,
+    dependencies,
+    architecturalPatterns,
+    directoryTree,
   };
 }
 
@@ -490,6 +1025,7 @@ function printHumanResult(result: LearnResult, verbose: boolean): void {
  */
 export async function executeLearnCommand(args: string[]): Promise<void> {
   const parsedArgs = parseLearnArgs(args);
+  const contextFilePath = path.join(parsedArgs.path, 'ralph-context.md');
 
   try {
     if (!parsedArgs.json) {
@@ -499,10 +1035,42 @@ export async function executeLearnCommand(args: string[]): Promise<void> {
 
     const result = await analyzeProject(parsedArgs.path);
 
-    if (parsedArgs.json) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
+    // Generate and write context file (unless JSON output mode)
+    if (!parsedArgs.json) {
+      // Check if file exists and handle overwrite
+      if (fs.existsSync(contextFilePath)) {
+        if (!parsedArgs.force) {
+          const shouldOverwrite = await promptConfirmation(
+            `File ${contextFilePath} already exists. Overwrite?`
+          );
+          if (!shouldOverwrite) {
+            console.log('Operation cancelled. Use --force to overwrite without confirmation.');
+            printHumanResult(result, parsedArgs.verbose);
+            process.exit(0);
+          }
+        }
+      }
+
+      // Generate and write the context file
+      const contextContent = generateContextMarkdown(result);
+      fs.writeFileSync(contextFilePath, contextContent, 'utf-8');
+      
       printHumanResult(result, parsedArgs.verbose);
+      
+      // Show file info
+      const stats = fs.statSync(contextFilePath);
+      console.log('═══════════════════════════════════════════════════════════════');
+      console.log('                      Context File Generated                    ');
+      console.log('═══════════════════════════════════════════════════════════════');
+      console.log('');
+      console.log(`  📄 File:    ${contextFilePath}`);
+      console.log(`  📏 Size:    ${(stats.size / 1024).toFixed(2)} KB`);
+      console.log('');
+      console.log('  This file can be used by AI agents to understand your project.');
+      console.log('───────────────────────────────────────────────────────────────');
+      console.log('');
+    } else {
+      console.log(JSON.stringify(result, null, 2));
     }
 
     process.exit(0);

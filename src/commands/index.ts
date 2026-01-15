@@ -93,4 +93,4 @@ export {
   analyzeProject,
 } from './learn.js';
 
-export type { LearnResult, LearnArgs } from './learn.js';
+export type { LearnResult, LearnArgs, DependencyInfo } from './learn.js';
