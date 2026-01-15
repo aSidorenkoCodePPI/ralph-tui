@@ -1,19 +1,17 @@
 # Ralph TUI
 
 [![Built with Bun](https://img.shields.io/badge/Built%20with-Bun-f9f1e1.svg)](https://bun.sh)
+[![npm version](https://img.shields.io/npm/v/@asidorenkocodeppi/ralph-tui.svg)](https://www.npmjs.com/package/@asidorenkocodeppi/ralph-tui)
 
 **AI Agent Loop Orchestrator** - A terminal UI for orchestrating AI coding agents to work through task lists autonomously.
 
-Ralph TUI connects your AI coding assistant (GitHub Copilot CLI, Claude Code, OpenCode) to your task tracker and runs them in an autonomous loop, completing tasks one-by-one with intelligent selection, error handling, and full visibility.
+Ralph TUI connects your AI coding assistant (GitHub Copilot CLI, OpenCode) to your task tracker and runs them in an autonomous loop, completing tasks one-by-one with intelligent selection, error handling, and full visibility.
 
 ## Quick Start
 
 ```powershell
 # Install from npm (recommended)
 npm install -g @asidorenkocodeppi/ralph-tui
-
-# Or install from GitHub release
-npm install -g https://github.com/aSidorenkoCodePPI/ralph-tui/releases/download/v0.1.9/ralph-tui-0.1.9.tgz
 
 # Setup your project
 cd your-project
@@ -22,25 +20,86 @@ ralph-tui setup
 # Create a PRD with AI assistance
 ralph-tui create-prd --chat
 
+# Or create a PRD from a Jira ticket
+ralph-tui create-prd --jira
+
 # Run Ralph!
 ralph-tui run --prd ./prd.json
 ```
 
 That's it! Ralph will work through your tasks autonomously.
 
+## Jira Integration
+
+Ralph TUI integrates with Jira to convert your tickets into actionable PRDs with user stories.
+
+### Fetching Jira Issues
+
+```bash
+# List your assigned Jira issues
+ralph-tui jira-prd
+```
+
+This uses GitHub Copilot CLI's MCP (Model Context Protocol) to fetch issues assigned to you from Jira.
+
+### Creating PRDs from Jira Tickets
+
+```bash
+# Interactive: select a Jira ticket and generate a PRD
+ralph-tui create-prd --jira
+```
+
+**How it works:**
+1. Fetches your assigned Jira issues via Copilot CLI MCP
+2. Presents an interactive selector to choose a ticket
+3. Opens an AI chat session with the ticket context
+4. AI transforms the Jira ticket into a structured PRD with:
+   - User stories (US-001, US-002, etc.)
+   - Acceptance criteria as checklists
+   - Technical requirements extracted from the ticket
+
+**Example transformation:**
+
+Jira ticket:
+```
+TPH-123: Add dark mode support
+Acceptance Criteria:
+- User can toggle dark mode
+- Settings persist across sessions
+```
+
+Generated PRD:
+```markdown
+### US-001: Dark Mode Toggle
+- [ ] Add toggle switch in settings page
+- [ ] Toggle changes theme immediately
+
+### US-002: Persist Dark Mode Setting
+- [ ] Save preference to localStorage
+- [ ] Load preference on app startup
+```
+
 ## Supported AI Agents
 
 | Agent | Description | Default |
 |-------|-------------|---------|
 | `copilot` | GitHub Copilot CLI | Yes |
-| `claude` | Claude Code CLI | No |
 | `opencode` | OpenCode CLI | No |
 
 ## How It Works
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                                                                 │
+│                        PLANNING PHASE                           │
+│   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐   │
+│   │    JIRA      │────▶│   AI CHAT    │────▶│   PRD.JSON   │   │
+│   │   TICKET     │     │   SESSION    │     │  USER STORIES │   │
+│   └──────────────┘     └──────────────┘     └──────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       EXECUTION PHASE                           │
 │   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐   │
 │   │  1. SELECT   │────▶│  2. BUILD    │────▶│  3. EXECUTE  │   │
 │   │    TASK      │     │    PROMPT    │     │    AGENT     │   │
@@ -51,15 +110,27 @@ That's it! Ralph will work through your tasks autonomously.
 │   │  5. NEXT     │◀────────────────────────│  4. DETECT   │    │
 │   │    TASK      │                         │  COMPLETION  │    │
 │   └──────────────┘                         └──────────────┘    │
-│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Ralph selects the highest-priority task, builds a prompt, executes your AI agent, detects completion, and repeats until all tasks are done.
+**Planning Phase:**
+1. Fetch a Jira ticket (or create manually)
+2. AI chat transforms it into user stories with acceptance criteria
+3. Save as `prd.json` - your task list
+
+**Execution Phase:**
+1. Ralph selects the highest-priority incomplete task
+2. Builds a prompt with task details + context
+3. Executes your AI agent (Copilot CLI)
+4. Detects completion via `<promise>COMPLETE</promise>` token
+5. Marks task done, moves to next
+
+Repeat until all tasks are complete.
 
 ## Features
 
-- **AI Agents**: GitHub Copilot CLI (default), Claude Code, OpenCode
+- **Jira Integration**: Convert Jira tickets to PRDs with AI-generated user stories
+- **AI Agents**: GitHub Copilot CLI (default), OpenCode
 - **Task Trackers**: prd.json (simple), Beads (git-backed with dependencies)
 - **Session Persistence**: Pause anytime, resume later, survive crashes
 - **Real-time TUI**: Watch agent output, control execution with keyboard shortcuts
@@ -77,6 +148,8 @@ Ralph selects the highest-priority task, builds a prompt, executes your AI agent
 | `ralph-tui logs` | View iteration output logs |
 | `ralph-tui setup` | Run interactive project setup |
 | `ralph-tui create-prd` | Create a new PRD interactively |
+| `ralph-tui create-prd --jira` | Create PRD from Jira ticket |
+| `ralph-tui jira-prd` | List assigned Jira issues |
 | `ralph-tui config show` | Display merged configuration |
 | `ralph-tui plugins agents` | List available agent plugins |
 
@@ -90,7 +163,7 @@ ralph-tui run --prd ./prd.json
 ralph-tui run --prd ./prd.json --headless
 
 # Override agent
-ralph-tui run --prd ./prd.json --agent claude
+ralph-tui run --prd ./prd.json --agent opencode
 
 # Override model (Copilot supports: claude-sonnet-4, gpt-5, etc.)
 ralph-tui run --prd ./prd.json --model claude-sonnet-4
@@ -136,12 +209,16 @@ bun --version
 ### Installing GitHub Copilot CLI
 
 ```powershell
-# Windows
-npm install -g @github/copilot
+# Install
+npm install -g @githubnext/github-copilot-cli
 
 # Authenticate
 gh auth login
 ```
+
+### Jira MCP Setup (for Jira integration)
+
+The Jira integration uses GitHub Copilot CLI's MCP feature. Ensure your Copilot CLI is configured with Jira MCP access.
 
 ## Development
 
@@ -169,11 +246,15 @@ ralph-tui/
 ├── src/
 │   ├── cli.tsx           # CLI entry point
 │   ├── commands/         # CLI commands
+│   │   ├── jira-prd.ts   # Jira integration
+│   │   └── create-prd.ts # PRD creation with --jira flag
+│   ├── chat/             # AI chat engine for PRD generation
 │   ├── config/           # Configuration (Zod schemas)
 │   ├── engine/           # Execution engine
 │   ├── plugins/
-│   │   ├── agents/       # Agent plugins (copilot, claude, opencode)
+│   │   ├── agents/       # Agent plugins (copilot, opencode)
 │   │   └── trackers/     # Tracker plugins (json, beads)
+│   ├── prd/              # PRD parsing and Jira mapping
 │   ├── session/          # Session persistence
 │   └── tui/              # Terminal UI components
 └── dist/                 # Built output

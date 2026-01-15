@@ -37099,7 +37099,7 @@ var require_node_notifier = __commonJS((exports, module2) => {
 var require_package = __commonJS((exports, module2) => {
   module2.exports = {
     name: "@asidorenkocodeppi/ralph-tui",
-    version: "0.1.13",
+    version: "0.1.14",
     publishConfig: {
       access: "public"
     },
@@ -94081,4 +94081,4 @@ main2().catch((error48) => {
   process.exit(1);
 });
 
-//# debugId=8879107D08D85ED864756E2164756E21
+//# debugId=595C91990691B0AB64756E2164756E21
