@@ -36310,7 +36310,7 @@ var require_growl = __commonJS((exports, module2) => {
 
 // node_modules/node-notifier/notifiers/notificationcenter.js
 var require_notificationcenter = __commonJS((exports, module2) => {
-  var __dirname = "C:\\Users\\ars\\Documents\\KI-Helge\\ralph-tui\\node_modules\\node-notifier\\notifiers";
+  var __dirname = "C:\\Users\\artur\\OneDrive\\Desktop\\Artur\\UNI\\Projekte\\ralph-tui-main\\node_modules\\node-notifier\\notifiers";
   var utils = require_utils2();
   var Growl = require_growl();
   var path3 = __require("path");
@@ -36387,7 +36387,7 @@ var require_notificationcenter = __commonJS((exports, module2) => {
 
 // node_modules/node-notifier/notifiers/balloon.js
 var require_balloon = __commonJS((exports, module2) => {
-  var __dirname = "C:\\Users\\ars\\Documents\\KI-Helge\\ralph-tui\\node_modules\\node-notifier\\notifiers";
+  var __dirname = "C:\\Users\\artur\\OneDrive\\Desktop\\Artur\\UNI\\Projekte\\ralph-tui-main\\node_modules\\node-notifier\\notifiers";
   var path3 = __require("path");
   var notifier = path3.resolve(__dirname, "../vendor/notifu/notifu");
   var checkGrowl = require_checkGrowl();
@@ -36946,7 +36946,7 @@ var require_dist = __commonJS((exports) => {
 
 // node_modules/node-notifier/notifiers/toaster.js
 var require_toaster = __commonJS((exports, module2) => {
-  var __dirname = "C:\\Users\\ars\\Documents\\KI-Helge\\ralph-tui\\node_modules\\node-notifier\\notifiers";
+  var __dirname = "C:\\Users\\artur\\OneDrive\\Desktop\\Artur\\UNI\\Projekte\\ralph-tui-main\\node_modules\\node-notifier\\notifiers";
   var path3 = __require("path");
   var notifier = path3.resolve(__dirname, "../vendor/snoreToast/snoretoast");
   var utils = require_utils2();
@@ -94436,4 +94436,4 @@ export {
   AgentRegistry
 };
 
-//# debugId=AE5B7AF9BC4ACFFC64756E2164756E21
+//# debugId=44596F723B0A5BC564756E2164756E21

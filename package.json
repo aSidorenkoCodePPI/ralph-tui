@@ -1,6 +1,6 @@
 {
   "name": "@asidorenkocodeppi/ralph-tui",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "publishConfig": {
     "access": "public"
   },
@@ -15,7 +15,7 @@
     }
   },
   "bin": {
-    "ralph-tui": "./dist/cli.js"
+    "ralph-tui": "dist/cli.js"
   },
   "scripts": {
     "build": "bun run build:cli && bun run build:lib && bun run build:assets",
@@ -33,11 +33,11 @@
     "website:build": "cd website && bun run build",
     "website:lint": "cd website && bun run lint"
   },
-"author": "subsy",
+  "author": "subsy",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aSidorenkoCodePPI/ralph-tui.git"
+    "url": "git+https://github.com/aSidorenkoCodePPI/ralph-tui.git"
   },
   "homepage": "https://github.com/aSidorenkoCodePPI/ralph-tui",
   "bugs": {

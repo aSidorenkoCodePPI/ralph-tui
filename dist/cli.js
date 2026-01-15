@@ -36311,7 +36311,7 @@ var require_growl = __commonJS((exports, module2) => {
 
 // node_modules/node-notifier/notifiers/notificationcenter.js
 var require_notificationcenter = __commonJS((exports, module2) => {
-  var __dirname = "C:\\Users\\ars\\Documents\\KI-Helge\\ralph-tui\\node_modules\\node-notifier\\notifiers";
+  var __dirname = "C:\\Users\\artur\\OneDrive\\Desktop\\Artur\\UNI\\Projekte\\ralph-tui-main\\node_modules\\node-notifier\\notifiers";
   var utils = require_utils2();
   var Growl = require_growl();
   var path3 = __require("path");
@@ -36388,7 +36388,7 @@ var require_notificationcenter = __commonJS((exports, module2) => {
 
 // node_modules/node-notifier/notifiers/balloon.js
 var require_balloon = __commonJS((exports, module2) => {
-  var __dirname = "C:\\Users\\ars\\Documents\\KI-Helge\\ralph-tui\\node_modules\\node-notifier\\notifiers";
+  var __dirname = "C:\\Users\\artur\\OneDrive\\Desktop\\Artur\\UNI\\Projekte\\ralph-tui-main\\node_modules\\node-notifier\\notifiers";
   var path3 = __require("path");
   var notifier = path3.resolve(__dirname, "../vendor/notifu/notifu");
   var checkGrowl = require_checkGrowl();
@@ -36947,7 +36947,7 @@ var require_dist = __commonJS((exports) => {
 
 // node_modules/node-notifier/notifiers/toaster.js
 var require_toaster = __commonJS((exports, module2) => {
-  var __dirname = "C:\\Users\\ars\\Documents\\KI-Helge\\ralph-tui\\node_modules\\node-notifier\\notifiers";
+  var __dirname = "C:\\Users\\artur\\OneDrive\\Desktop\\Artur\\UNI\\Projekte\\ralph-tui-main\\node_modules\\node-notifier\\notifiers";
   var path3 = __require("path");
   var notifier = path3.resolve(__dirname, "../vendor/snoreToast/snoretoast");
   var utils = require_utils2();
@@ -94063,4 +94063,4 @@ main2().catch((error48) => {
   process.exit(1);
 });
 
-//# debugId=A289326B6DB1C64F64756E2164756E21
+//# debugId=820A125CAADA2A7F64756E2164756E21
