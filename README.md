@@ -109,8 +109,26 @@ ralph-tui run --iterations 5
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) - JavaScript runtime
+- [Bun](https://bun.sh) - JavaScript runtime (REQUIRED)
 - [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) - Default AI agent
+
+### Installing Bun (Required)
+
+```powershell
+# Windows - Option 1: via npm
+npm install -g bun
+
+# Windows - Option 2: via PowerShell
+powershell -c "irm bun.sh/install.ps1 | iex"
+
+# macOS/Linux
+curl -fsSL https://bun.sh/install | bash
+```
+
+After installation, verify Bun is available:
+```powershell
+bun --version
+```
 
 ### Installing GitHub Copilot CLI
 
