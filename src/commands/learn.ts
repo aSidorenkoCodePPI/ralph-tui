@@ -1108,71 +1108,113 @@ function parseDependencies(rootPath: string, files: string[]): DependencyInfo[] 
 }
 
 /**
- * Detect architectural patterns from project structure
+ * Architectural pattern with confidence level
+ */
+interface ArchitecturalPattern {
+  name: string;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Detect architectural patterns from project structure with confidence indicators
  */
 function detectArchitecturalPatterns(rootPath: string, files: string[], topLevelDirs: string[]): string[] {
-  const patterns: string[] = [];
+  const patterns: ArchitecturalPattern[] = [];
 
-  // MVC pattern
+  // MVC pattern - confidence based on how many MVC dirs are present
   const mvcDirs = ['models', 'views', 'controllers', 'model', 'view', 'controller'];
-  if (mvcDirs.some(d => topLevelDirs.includes(d))) {
-    patterns.push('MVC (Model-View-Controller)');
+  const mvcMatches = mvcDirs.filter(d => topLevelDirs.includes(d)).length;
+  if (mvcMatches >= 3) {
+    patterns.push({ name: 'MVC (Model-View-Controller)', confidence: 'high' });
+  } else if (mvcMatches >= 2) {
+    patterns.push({ name: 'MVC (Model-View-Controller)', confidence: 'medium' });
+  } else if (mvcMatches >= 1) {
+    patterns.push({ name: 'MVC (Model-View-Controller)', confidence: 'low' });
   }
 
-  // Clean Architecture / Hexagonal
+  // Clean Architecture / Hexagonal - confidence based on matching dirs
   const cleanArchDirs = ['domain', 'application', 'infrastructure', 'adapters', 'ports'];
-  if (cleanArchDirs.filter(d => topLevelDirs.includes(d)).length >= 2) {
-    patterns.push('Clean Architecture / Hexagonal');
+  const cleanArchMatches = cleanArchDirs.filter(d => topLevelDirs.includes(d)).length;
+  if (cleanArchMatches >= 4) {
+    patterns.push({ name: 'Clean Architecture / Hexagonal', confidence: 'high' });
+  } else if (cleanArchMatches >= 3) {
+    patterns.push({ name: 'Clean Architecture / Hexagonal', confidence: 'medium' });
+  } else if (cleanArchMatches >= 2) {
+    patterns.push({ name: 'Clean Architecture / Hexagonal', confidence: 'low' });
   }
 
-  // Component-based (React, Vue, etc.)
-  if (topLevelDirs.includes('components') || topLevelDirs.includes('ui')) {
-    patterns.push('Component-based architecture');
+  // Component-based (React, Vue, etc.) - high if both, medium if one
+  const hasComponents = topLevelDirs.includes('components');
+  const hasUi = topLevelDirs.includes('ui');
+  if (hasComponents && hasUi) {
+    patterns.push({ name: 'Component-based architecture', confidence: 'high' });
+  } else if (hasComponents || hasUi) {
+    patterns.push({ name: 'Component-based architecture', confidence: 'medium' });
   }
 
-  // Monorepo patterns
-  if (topLevelDirs.includes('packages') || topLevelDirs.includes('apps') || topLevelDirs.includes('libs')) {
-    patterns.push('Monorepo structure');
+  // Monorepo patterns - confidence based on indicators
+  const monorepoIndicators = ['packages', 'apps', 'libs', 'workspaces'].filter(d => topLevelDirs.includes(d));
+  const hasMonorepoConfig = files.includes('nx.json') || files.includes('lerna.json') || 
+                            files.includes('turbo.json') || files.includes('pnpm-workspace.yaml');
+  if (monorepoIndicators.length >= 2 || (monorepoIndicators.length >= 1 && hasMonorepoConfig)) {
+    patterns.push({ name: 'Monorepo structure', confidence: 'high' });
+  } else if (monorepoIndicators.length >= 1) {
+    patterns.push({ name: 'Monorepo structure', confidence: 'medium' });
+  }
+
+  // Add specific monorepo tool detection with high confidence
+  if (files.includes('nx.json')) {
+    patterns.push({ name: 'Nx workspace', confidence: 'high' });
+  }
+  if (files.includes('lerna.json')) {
+    patterns.push({ name: 'Lerna monorepo', confidence: 'high' });
+  }
+  if (files.includes('turbo.json')) {
+    patterns.push({ name: 'Turborepo', confidence: 'high' });
+  }
+  if (files.includes('pnpm-workspace.yaml')) {
+    patterns.push({ name: 'PNPM workspace', confidence: 'high' });
   }
 
   // Feature-based / Module-based
-  if (topLevelDirs.includes('features') || topLevelDirs.includes('modules')) {
-    patterns.push('Feature-based / Modular architecture');
+  const hasFeatures = topLevelDirs.includes('features');
+  const hasModules = topLevelDirs.includes('modules');
+  if (hasFeatures && hasModules) {
+    patterns.push({ name: 'Feature-based / Modular architecture', confidence: 'high' });
+  } else if (hasFeatures || hasModules) {
+    patterns.push({ name: 'Feature-based / Modular architecture', confidence: 'medium' });
   }
 
-  // API patterns
-  if (topLevelDirs.includes('api') || topLevelDirs.includes('routes') || topLevelDirs.includes('endpoints')) {
-    patterns.push('API-centric design');
+  // API patterns - confidence based on multiple indicators
+  const apiDirs = ['api', 'routes', 'endpoints', 'controllers', 'handlers'].filter(d => topLevelDirs.includes(d));
+  if (apiDirs.length >= 3) {
+    patterns.push({ name: 'API-centric design', confidence: 'high' });
+  } else if (apiDirs.length >= 2) {
+    patterns.push({ name: 'API-centric design', confidence: 'medium' });
+  } else if (apiDirs.length >= 1) {
+    patterns.push({ name: 'API-centric design', confidence: 'low' });
   }
 
   // Layered architecture
-  const layeredDirs = ['services', 'repositories', 'entities'];
-  if (layeredDirs.filter(d => topLevelDirs.includes(d)).length >= 2) {
-    patterns.push('Layered architecture');
+  const layeredDirs = ['services', 'repositories', 'entities', 'dao', 'dto'];
+  const layeredMatches = layeredDirs.filter(d => topLevelDirs.includes(d)).length;
+  if (layeredMatches >= 3) {
+    patterns.push({ name: 'Layered architecture', confidence: 'high' });
+  } else if (layeredMatches >= 2) {
+    patterns.push({ name: 'Layered architecture', confidence: 'medium' });
   }
 
-  // Plugin/Extension architecture
-  if (topLevelDirs.includes('plugins') || topLevelDirs.includes('extensions') || topLevelDirs.includes('addons')) {
-    patterns.push('Plugin/Extension architecture');
+  // Plugin/Extension architecture - confidence based on indicators
+  const pluginDirs = ['plugins', 'extensions', 'addons', 'middleware'].filter(d => topLevelDirs.includes(d));
+  if (pluginDirs.length >= 2) {
+    patterns.push({ name: 'Plugin/Extension architecture', confidence: 'high' });
+  } else if (pluginDirs.length >= 1) {
+    patterns.push({ name: 'Plugin/Extension architecture', confidence: 'medium' });
   }
 
-  // Check for configuration files suggesting patterns
-  if (files.includes('nx.json')) {
-    patterns.push('Nx workspace (Monorepo)');
-  }
-  if (files.includes('lerna.json')) {
-    patterns.push('Lerna monorepo');
-  }
-  if (files.includes('turbo.json')) {
-    patterns.push('Turborepo');
-  }
-  if (files.includes('pnpm-workspace.yaml')) {
-    patterns.push('PNPM workspace');
-  }
-
-  // Check for serverless patterns
+  // Check for serverless patterns - high confidence from config files
   if (files.includes('serverless.yml') || files.includes('serverless.yaml') || files.includes('serverless.ts')) {
-    patterns.push('Serverless architecture');
+    patterns.push({ name: 'Serverless architecture', confidence: 'high' });
   }
 
   // Microservices indicators
@@ -1180,15 +1222,24 @@ function detectArchitecturalPatterns(rootPath: string, files: string[], topLevel
     const composePath = path.join(rootPath, files.find(f => f.startsWith('docker-compose')) || '');
     try {
       const content = fs.readFileSync(composePath, 'utf-8');
-      if ((content.match(/services:/g) || []).length > 0 && content.split('image:').length > 2) {
-        patterns.push('Microservices architecture');
+      const serviceCount = (content.match(/^\s{2}\w+:/gm) || []).length;
+      if (serviceCount >= 5) {
+        patterns.push({ name: 'Microservices architecture', confidence: 'high' });
+      } else if (serviceCount >= 3) {
+        patterns.push({ name: 'Microservices architecture', confidence: 'medium' });
+      } else if (serviceCount >= 2) {
+        patterns.push({ name: 'Microservices architecture', confidence: 'low' });
       }
     } catch {
       // Skip
     }
   }
 
-  return patterns;
+  // Format patterns with confidence indicators and sort by confidence
+  const confidenceOrder = { high: 0, medium: 1, low: 2 };
+  return patterns
+    .sort((a, b) => confidenceOrder[a.confidence] - confidenceOrder[b.confidence])
+    .map(p => `${p.name} [${p.confidence} confidence]`);
 }
 
 /**
