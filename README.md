@@ -47,8 +47,8 @@ bun install -g @asidorenkocodeppi/ralph-tui
 ### Step 3: Install GitHub Copilot CLI (Default Agent)
 
 ```powershell
-# Windows
-npm install -g @github/copilot
+# Install
+npm install -g @githubnext/github-copilot-cli
 
 # Authenticate
 gh auth login
@@ -72,12 +72,6 @@ export PATH="$HOME/.bun/bin:$PATH"
 ## Quick Start
 
 ```powershell
-<<<<<<< HEAD
-=======
-# Install from npm (recommended)
-npm install -g @asidorenkocodeppi/ralph-tui
-
->>>>>>> a38e19b9b10ec283578d9d0ba32773dd35f471f4
 # Setup your project
 cd your-project
 ralph-tui setup
@@ -86,9 +80,6 @@ ralph-tui setup
 ralph-tui create-prd
 
 # Or create a PRD from a Jira issue
-ralph-tui create-prd --jira
-
-# Or create a PRD from a Jira ticket
 ralph-tui create-prd --jira
 
 # Run Ralph!
@@ -147,6 +138,10 @@ Generated PRD:
 - [ ] Load preference on app startup
 ```
 
+### Jira MCP Setup
+
+The Jira integration uses GitHub Copilot CLI's MCP feature. Ensure your Copilot CLI is configured with Jira MCP access.
+
 ## Supported AI Agents
 
 | Agent | Description | Default |
@@ -200,7 +195,6 @@ Repeat until all tasks are complete.
 - **Jira Integration**: Convert Jira tickets to PRDs with AI-generated user stories
 - **AI Agents**: GitHub Copilot CLI (default), OpenCode
 - **Task Trackers**: prd.json (simple), Beads (git-backed with dependencies)
-- **Jira Integration**: Create PRDs from Jira issues with `--jira` flag
 - **Session Persistence**: Pause anytime, resume later, survive crashes
 - **Real-time TUI**: Watch agent output, control execution with keyboard shortcuts
 - **Cross-iteration Context**: Automatic progress tracking between tasks
@@ -217,13 +211,8 @@ Repeat until all tasks are complete.
 | `ralph-tui logs` | View iteration output logs |
 | `ralph-tui setup` | Run interactive project setup |
 | `ralph-tui create-prd` | Create a new PRD interactively |
-<<<<<<< HEAD
-| `ralph-tui create-prd --jira` | Create a PRD from a Jira issue |
-| `ralph-tui jira-prd` | List Jira issues assigned to you |
-=======
 | `ralph-tui create-prd --jira` | Create PRD from Jira ticket |
 | `ralph-tui jira-prd` | List assigned Jira issues |
->>>>>>> a38e19b9b10ec283578d9d0ba32773dd35f471f4
 | `ralph-tui config show` | Display merged configuration |
 | `ralph-tui plugins agents` | List available agent plugins |
 
@@ -257,46 +246,6 @@ ralph-tui run --iterations 5
 | `q` | Quit |
 | `?` | Show help |
 
-<<<<<<< HEAD
-=======
-## Prerequisites
-
-- [Bun](https://bun.sh) - JavaScript runtime (REQUIRED)
-- [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) - Default AI agent
-
-### Installing Bun (Required)
-
-```powershell
-# Windows - Option 1: via npm
-npm install -g bun
-
-# Windows - Option 2: via PowerShell
-powershell -c "irm bun.sh/install.ps1 | iex"
-
-# macOS/Linux
-curl -fsSL https://bun.sh/install | bash
-```
-
-After installation, verify Bun is available:
-```powershell
-bun --version
-```
-
-### Installing GitHub Copilot CLI
-
-```powershell
-# Install
-npm install -g @githubnext/github-copilot-cli
-
-# Authenticate
-gh auth login
-```
-
-### Jira MCP Setup (for Jira integration)
-
-The Jira integration uses GitHub Copilot CLI's MCP feature. Ensure your Copilot CLI is configured with Jira MCP access.
-
->>>>>>> a38e19b9b10ec283578d9d0ba32773dd35f471f4
 ## Development
 
 ### Setup
