@@ -85,6 +85,8 @@ Learn Options:
   --output, -o <path> Custom output file path (default: ./ralph-context.md)
   --depth <level>     Analysis depth: shallow, standard (default), or deep
   --agent             Use master agent (copilot -p) for intelligent folder groupings
+  --strategy <type>   Splitting strategy: top-level, domain, balanced, auto (default)
+  --dry-run           Preview the planned split without executing workers
   --json              Output analysis in JSON format
   --verbose, -v       Show detailed analysis output
   --force, -f         Overwrite existing file without confirmation
@@ -96,6 +98,8 @@ Examples:
   ralph-tui convert --to json ./prd.md   # Convert PRD to JSON
   ralph-tui learn                        # Analyze current directory
   ralph-tui learn --agent                # Use master agent for folder groupings
+  ralph-tui learn --strategy domain      # Group by code dependencies
+  ralph-tui learn --dry-run              # Preview split plan
   ralph-tui learn ./my-project           # Analyze specific directory
   ralph-tui learn --depth shallow        # Quick structural scan
   ralph-tui learn --depth deep           # Full code pattern analysis

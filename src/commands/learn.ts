@@ -368,6 +368,20 @@ const PROJECT_INDICATORS = {
 export type DepthLevel = 'shallow' | 'standard' | 'deep';
 
 /**
+ * Folder splitting strategy for parallel workloads.
+ * - 'top-level': Split by top-level directories only
+ * - 'domain': Analyze imports/dependencies to group related code
+ * - 'balanced': Distribute files evenly across workers by count/size
+ * - 'auto': Let the LLM choose the best strategy (default)
+ */
+export type SplittingStrategy = 'top-level' | 'domain' | 'balanced' | 'auto';
+
+/**
+ * Valid splitting strategies for validation
+ */
+export const VALID_STRATEGIES: SplittingStrategy[] = ['top-level', 'domain', 'balanced', 'auto'];
+
+/**
  * Code pattern information (for deep analysis)
  */
 export interface CodePattern {
@@ -465,6 +479,9 @@ export interface LearnResult {
   /** Analysis depth level used */
   depthLevel: DepthLevel;
 
+  /** Splitting strategy used for folder grouping */
+  strategy?: SplittingStrategy;
+
   /** Code patterns detected (deep analysis only) */
   codePatterns?: CodePattern[];
 
@@ -532,6 +549,12 @@ export interface LearnArgs {
 
   /** Use master agent (copilot -p) for intelligent analysis */
   agent: boolean;
+
+  /** Folder splitting strategy for parallel workloads */
+  strategy: SplittingStrategy;
+
+  /** Show planned split without executing workers */
+  dryRun: boolean;
 }
 
 /**
@@ -700,6 +723,12 @@ Options:
   --output, -o <path> Custom output file path (default: ./ralph-context.md)
   --depth <level>     Analysis depth: shallow, standard (default), or deep
   --agent             Use master agent (copilot -p) for intelligent folder groupings
+  --strategy <type>   Folder splitting strategy for parallel workloads:
+                        top-level - Split by top-level directories only
+                        domain    - Analyze imports/dependencies to group related code
+                        balanced  - Distribute files evenly across workers by count/size
+                        auto      - Let the LLM choose the best strategy (default)
+  --dry-run           Show the planned split without executing workers
   --include <pattern> Include paths matching pattern (overrides exclusions)
                       Can be specified multiple times
   --json              Output in JSON format (machine-readable)
@@ -708,6 +737,25 @@ Options:
   --quiet, -q         Suppress progress output
   --strict            Exit with error on any warning (inaccessible/failed files)
   -h, --help          Show this help message
+
+Splitting Strategies:
+  --strategy controls how the project is split into parallel workloads for analysis.
+  This is useful when using --agent for intelligent folder grouping.
+
+  top-level           Splits by top-level directories only (e.g., src/commands,
+                      src/tui). Simple and fast, works well for well-organized
+                      projects with clear module boundaries.
+
+  domain              Analyzes imports/dependencies to group related code together.
+                      Uses the master agent to identify code relationships and
+                      create groupings that keep tightly coupled code together.
+
+  balanced            Distributes files evenly across workers by count/size.
+                      Ensures roughly equal workload per worker regardless of
+                      code relationships. Good for maximizing parallel efficiency.
+
+  auto (default)      Lets the LLM analyze the project and choose the best
+                      strategy based on project structure, size, and complexity.
 
 Master Agent Analysis (--agent):
   When --agent is specified, the learn command invokes a master agent using
@@ -720,6 +768,16 @@ Master Agent Analysis (--agent):
   - Completes within 60 seconds for projects under 1000 files
   
   Requires: GitHub Copilot CLI installed and authenticated
+
+Dry Run Mode:
+  Use --dry-run to preview the folder splitting plan without spawning workers.
+  This shows:
+  - Which strategy was used/selected
+  - Group names and folder assignments
+  - Estimated file counts per group
+  
+  Combine with --output to save the plan:
+    ralph-tui learn --dry-run --output plan.json
 
 Path Exclusions:
   The following paths are excluded by default:
@@ -794,6 +852,11 @@ Examples:
   ralph-tui learn ./my-project                # Analyze specific directory
   ralph-tui learn --agent                     # Use master agent for folder groupings
   ralph-tui learn --agent --json              # Get agent plan as JSON
+  ralph-tui learn --strategy top-level        # Split by top-level directories
+  ralph-tui learn --strategy domain           # Group by code dependencies
+  ralph-tui learn --strategy balanced         # Distribute files evenly
+  ralph-tui learn --dry-run                   # Preview split plan without executing
+  ralph-tui learn --dry-run --output plan.json # Save plan to file
   ralph-tui learn --depth shallow             # Quick structural scan
   ralph-tui learn --depth deep                # Full code pattern analysis
   ralph-tui learn --output ./docs/context.md  # Custom output location
@@ -823,6 +886,8 @@ export function parseLearnArgs(args: string[]): LearnArgs {
     include: [],
     strict: false,
     agent: false,
+    strategy: 'auto',
+    dryRun: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -843,6 +908,28 @@ export function parseLearnArgs(args: string[]): LearnArgs {
       result.strict = true;
     } else if (arg === '--agent') {
       result.agent = true;
+    } else if (arg === '--dry-run') {
+      result.dryRun = true;
+    } else if (arg === '--strategy') {
+      const nextArg = args[++i];
+      if (!nextArg || nextArg.startsWith('-')) {
+        console.error('Error: --strategy requires a value argument');
+        console.error(`Valid options: ${VALID_STRATEGIES.join(', ')}`);
+        process.exit(1);
+      }
+      const strategyValue = nextArg.toLowerCase();
+      if (!VALID_STRATEGIES.includes(strategyValue as SplittingStrategy)) {
+        console.error(`Error: Invalid strategy '${nextArg}'.`);
+        console.error(`Valid options: ${VALID_STRATEGIES.join(', ')}`);
+        console.error('');
+        console.error('Strategy descriptions:');
+        console.error('  top-level  - Split by top-level directories only');
+        console.error('  domain     - Analyze imports/dependencies to group related code');
+        console.error('  balanced   - Distribute files evenly across workers by count/size');
+        console.error('  auto       - Let the LLM choose the best strategy (default)');
+        process.exit(1);
+      }
+      result.strategy = strategyValue as SplittingStrategy;
     } else if (arg === '--output' || arg === '-o') {
       const nextArg = args[++i];
       if (!nextArg || nextArg.startsWith('-')) {
@@ -1931,12 +2018,57 @@ async function performDeepAnalysis(
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /**
- * Build the prompt for master agent analysis
+ * Get strategy-specific instructions for the master agent prompt.
+ */
+function getStrategyInstructions(strategy: SplittingStrategy): string {
+  switch (strategy) {
+    case 'top-level':
+      return `
+## Strategy: Top-Level Directories
+Split ONLY by top-level directories. Each top-level directory should be its own group.
+Do NOT analyze imports or dependencies. Simply list each major directory as a separate group.
+This is a straightforward structural split.`;
+    
+    case 'domain':
+      return `
+## Strategy: Domain-Based Grouping
+Analyze imports and dependencies to group related code together.
+Focus on:
+- Import/require statements between files
+- Which folders frequently import from each other
+- Domain boundaries (e.g., user management, authentication, payments)
+- Keep tightly coupled code in the same group to minimize cross-group dependencies`;
+    
+    case 'balanced':
+      return `
+## Strategy: Balanced Distribution
+Distribute files as evenly as possible across groups.
+Focus on:
+- File counts per directory
+- Aim for roughly equal number of files per group
+- Create groups of similar size/complexity regardless of code relationships
+- Goal is to maximize parallel efficiency with even workload distribution`;
+    
+    case 'auto':
+    default:
+      return `
+## Strategy: Auto (LLM Choice)
+Analyze the project and choose the best splitting approach:
+- For small projects (<50 files): prefer top-level split
+- For projects with clear domain boundaries: prefer domain-based grouping
+- For monorepos or large flat structures: prefer balanced distribution
+- Consider the project type, conventions, and structure when deciding`;
+  }
+}
+
+/**
+ * Build the prompt for master agent analysis with strategy support.
  */
 function buildMasterAgentPrompt(
   directoryTree: string,
   packageJson: Record<string, unknown> | null,
-  imports: string[]
+  imports: string[],
+  strategy: SplittingStrategy = 'auto'
 ): string {
   const packageInfo = packageJson 
     ? `\n\n## Package.json Summary\n\`\`\`json\n${JSON.stringify(packageJson, null, 2)}\n\`\`\``
@@ -1946,7 +2078,10 @@ function buildMasterAgentPrompt(
     ? `\n\n## Sample Import Statements (first 50)\n\`\`\`\n${imports.slice(0, 50).join('\n')}\n\`\`\``
     : '';
 
-  return `Analyze the following project structure and determine intelligent folder groupings based on code relationships.
+  const strategyInstructions = getStrategyInstructions(strategy);
+
+  return `Analyze the following project structure and determine folder groupings for parallel analysis.
+${strategyInstructions}
 
 ## Directory Tree
 \`\`\`
@@ -1955,11 +2090,7 @@ ${directoryTree}
 
 ## Your Task
 
-Based on the project structure, dependencies, and import patterns, create logical folder groupings that represent related functionality. Consider:
-- Feature boundaries (related components, services, utilities)
-- Architectural layers (API, business logic, data access)
-- Module dependencies (which folders commonly import from each other)
-- Domain boundaries (separate business domains/features)
+Based on the strategy above and the project structure, create logical folder groupings.
 
 Return ONLY a valid JSON object with this exact structure, no other text:
 
@@ -1971,8 +2102,9 @@ Return ONLY a valid JSON object with this exact structure, no other text:
       "priority": 1
     }
   ],
-  "summary": "Brief explanation of the grouping strategy",
-  "analysisOrder": ["folder1", "folder2"]
+  "summary": "Brief explanation of the grouping approach used",
+  "analysisOrder": ["folder1", "folder2"],
+  "strategyUsed": "${strategy}"
 }
 
 Rules for priority (1-5):
@@ -2133,7 +2265,8 @@ export async function invokeMasterAgentAnalysis(
   rootPath: string,
   directoryTree: string,
   quiet: boolean = false,
-  verbose: boolean = false
+  verbose: boolean = false,
+  strategy: SplittingStrategy = 'auto'
 ): Promise<MasterAgentResult> {
   const startTime = Date.now();
   const timeout = 60000; // 60 seconds
@@ -2142,21 +2275,23 @@ export async function invokeMasterAgentAnalysis(
   const packageJson = parsePackageJsonForAgent(rootPath);
   const imports = extractImportStatements(rootPath);
   
-  // Build the prompt
-  const prompt = buildMasterAgentPrompt(directoryTree, packageJson, imports);
+  // Build the prompt with strategy
+  const prompt = buildMasterAgentPrompt(directoryTree, packageJson, imports, strategy);
   
   if (verbose) {
     console.log('Master agent prompt length:', prompt.length);
+    console.log('Strategy:', strategy);
   }
   
   // Start spinner animation
   let spinnerInterval: ReturnType<typeof setInterval> | null = null;
   let frameIndex = 0;
   
+  const strategyLabel = strategy === 'auto' ? 'auto-detect' : strategy;
   if (!quiet) {
     spinnerInterval = setInterval(() => {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      process.stdout.write(`\r${SPINNER_FRAMES[frameIndex]} Analyzing project structure... (${elapsed}s)`);
+      process.stdout.write(`\r${SPINNER_FRAMES[frameIndex]} Analyzing project structure [strategy: ${strategyLabel}]... (${elapsed}s)`);
       frameIndex = (frameIndex + 1) % SPINNER_FRAMES.length;
     }, 80);
   }
@@ -2325,7 +2460,8 @@ export async function analyzeProject(
   includePatterns: string[] = [],
   verbose: boolean = false,
   useAgent: boolean = false,
-  quiet: boolean = false
+  quiet: boolean = false,
+  strategy: SplittingStrategy = 'auto'
 ): Promise<LearnResult> {
   const startTime = Date.now();
   const maxFiles = 10000;
@@ -2429,7 +2565,8 @@ export async function analyzeProject(
       rootPath,
       directoryTree,
       quiet,
-      verbose
+      verbose,
+      strategy
     );
     
     if (agentResult.success && agentResult.plan) {
@@ -2461,6 +2598,7 @@ export async function analyzeProject(
     architecturalPatterns,
     directoryTree,
     depthLevel: depth,
+    strategy: useAgent ? strategy : undefined,
     codePatterns,
     exclusionConfig: exclusionManager.getConfig(),
     exclusionStats: exclusionManager.getStats(),
@@ -2469,6 +2607,87 @@ export async function analyzeProject(
     failedFiles: failedFiles > 0 ? failedFiles : undefined,
     masterAgentPlan,
   };
+}
+
+/**
+ * Print dry-run result showing the planned split without executing workers.
+ */
+function printDryRunResult(result: LearnResult, args: LearnArgs): void {
+  // JSON output mode for dry-run
+  if (args.json) {
+    const dryRunOutput = {
+      dryRun: true,
+      strategy: result.strategy || args.strategy,
+      path: result.rootPath,
+      totalFiles: result.totalFiles,
+      totalDirectories: result.totalDirectories,
+      projectTypes: result.projectTypes,
+      plan: result.masterAgentPlan,
+    };
+    console.log(JSON.stringify(dryRunOutput, null, 2));
+    return;
+  }
+
+  // Human-readable dry-run output
+  console.log('');
+  console.log('═══════════════════════════════════════════════════════════════');
+  console.log('                    DRY RUN - Split Plan Preview                ');
+  console.log('═══════════════════════════════════════════════════════════════');
+  console.log('');
+  console.log(`  Project:    ${result.rootPath}`);
+  console.log(`  Strategy:   ${result.strategy || args.strategy}`);
+  console.log(`  Files:      ${result.totalFiles.toLocaleString()}`);
+  console.log(`  Directories: ${result.totalDirectories.toLocaleString()}`);
+  console.log('');
+
+  if (result.masterAgentPlan) {
+    console.log('───────────────────────────────────────────────────────────────');
+    console.log('  📋 Folder Groupings (from master agent)');
+    console.log('───────────────────────────────────────────────────────────────');
+    console.log('');
+
+    if (result.masterAgentPlan.summary) {
+      console.log(`  Summary: ${result.masterAgentPlan.summary}`);
+      console.log('');
+    }
+
+    const sortedGroups = [...result.masterAgentPlan.groupings].sort((a, b) => a.priority - b.priority);
+    
+    for (const group of sortedGroups) {
+      const folderCount = group.folders.length;
+      console.log(`  [Priority ${group.priority}] ${group.name}`);
+      console.log(`    Folders (${folderCount}):`);
+      for (const folder of group.folders) {
+        console.log(`      • ${folder}`);
+      }
+      console.log('');
+    }
+
+    if (result.masterAgentPlan.analysisOrder && result.masterAgentPlan.analysisOrder.length > 0) {
+      console.log('  Suggested Analysis Order:');
+      console.log(`    ${result.masterAgentPlan.analysisOrder.join(' → ')}`);
+      console.log('');
+    }
+
+    console.log('───────────────────────────────────────────────────────────────');
+    console.log(`  Total Groups: ${sortedGroups.length}`);
+    console.log(`  Total Folders: ${sortedGroups.reduce((sum, g) => sum + g.folders.length, 0)}`);
+  } else {
+    console.log('  ⚠️  No folder groupings generated.');
+    console.log('');
+    if (!args.agent) {
+      console.log('  Tip: Use --agent to enable master agent analysis for intelligent groupings.');
+    } else {
+      console.log('  The master agent analysis may have failed. Check verbose output for details.');
+    }
+  }
+
+  console.log('');
+  console.log('───────────────────────────────────────────────────────────────');
+  console.log('  This was a dry run. No workers were spawned.');
+  console.log('  Remove --dry-run to execute the full analysis.');
+  console.log('───────────────────────────────────────────────────────────────');
+  console.log('');
 }
 
 /**
@@ -2484,6 +2703,9 @@ function printHumanResult(result: LearnResult, verbose: boolean): void {
   console.log(`  Path:             ${result.rootPath}`);
   console.log(`  Project Type:     ${result.projectTypes.join(', ')}`);
   console.log(`  Depth:            ${result.depthLevel}`);
+  if (result.strategy) {
+    console.log(`  Strategy:         ${result.strategy}`);
+  }
   console.log(`  Files:            ${result.totalFiles.toLocaleString()}${result.truncated ? ' (truncated)' : ''}`);
   console.log(`  Directories:      ${result.totalDirectories.toLocaleString()}`);
   console.log(`  Duration:         ${result.durationMs}ms`);
@@ -2668,8 +2890,14 @@ export async function executeLearnCommand(args: string[]): Promise<void> {
     if (!parsedArgs.json && !parsedArgs.quiet) {
       console.log(`Analyzing project at: ${parsedArgs.path}`);
       console.log(`Depth level: ${parsedArgs.depth}`);
+      if (parsedArgs.agent || parsedArgs.strategy !== 'auto') {
+        console.log(`Strategy: ${parsedArgs.strategy}`);
+      }
       if (parsedArgs.agent) {
         console.log(`Master agent: enabled (using copilot -p)`);
+      }
+      if (parsedArgs.dryRun) {
+        console.log(`Mode: dry-run (preview only, no workers spawned)`);
       }
       if (parsedArgs.include.length > 0) {
         console.log(`Include patterns: ${parsedArgs.include.join(', ')}`);
@@ -2688,12 +2916,19 @@ export async function executeLearnCommand(args: string[]): Promise<void> {
       parsedArgs.include,
       parsedArgs.verbose,
       parsedArgs.agent,
-      parsedArgs.quiet || parsedArgs.json
+      parsedArgs.quiet || parsedArgs.json,
+      parsedArgs.strategy
     );
 
     // Stop progress reporter and set generating phase
     progressReporter.setPhase('Generating context file...');
     progressReporter.stop();
+
+    // Handle dry-run mode - show plan without writing context file
+    if (parsedArgs.dryRun) {
+      printDryRunResult(result, parsedArgs);
+      process.exit(0);
+    }
 
     // Generate and write context file (unless JSON output mode)
     if (!parsedArgs.json) {
