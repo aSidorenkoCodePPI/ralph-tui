@@ -27,4 +27,6 @@ bun.lock
 *.tgz
 package/
 
-# Include dist/ (not listed = included)
+# Exclude dist/ - built on install via postinstall script
+# This avoids embedding machine-specific paths from node-notifier
+dist/
