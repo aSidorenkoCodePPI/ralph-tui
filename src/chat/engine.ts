@@ -41,15 +41,38 @@ const TASK_SYSTEM_PROMPT = 'You are a helpful assistant. Follow the user instruc
 
 const PRD_COMPATIBILITY_GUIDANCE = `
 # PRD Output Requirements
-- Wrap the final PRD in [PRD]...[/PRD] markers.
-- Start the PRD with a "# PRD: <Feature Name>" heading.
-- Include a "## Quality Gates" section listing required commands.
-- Include a "## User Stories" section with entries like:
-  - "### US-001: Title"
-  - "**Description:** As a user, I want..."
-  - "**Acceptance Criteria:**" followed by checklist bullets ("- [ ] ...").
-- Use markdown formatting suitable for conversion tools.
+
+CRITICAL: The PRD MUST follow this exact format to be parsed correctly.
+
+## Required Structure
+
+1. Start with: # PRD: <Feature Name>
+2. Include a "## User Stories" section
+3. Each user story MUST use this EXACT format:
+
+### US-001: Story Title Here
+
+As a [user type], I want [goal] so that [benefit].
+
+**Acceptance Criteria:**
+- [ ] First criterion that can be checked off
+- [ ] Second criterion that can be checked off
+- [ ] Third criterion that can be checked off
+
+**Priority:** P1
+
+### US-002: Next Story Title
+
+...and so on.
+
+## Important Rules
+- Story IDs MUST be "US-" followed by 3 digits (US-001, US-002, etc.)
+- Do NOT use Jira issue keys (like TPH-123) as story IDs
+- Each story MUST have "**Acceptance Criteria:**" followed by checklist items
+- Checklist items MUST use "- [ ]" format (dash, space, brackets, space)
+- Wrap the final PRD in [PRD]...[/PRD] markers
 `;
+
 
 function stripSkillFrontMatter(skillSource: string): string {
   const frontMatterRegex = /^---\s*[\s\S]*?\n---\s*\n?/;
@@ -403,9 +426,8 @@ export function createPrdChatEngine(
 function buildJiraIssueContext(issue: JiraIssue): string {
   const parts: string[] = [
     '# Jira Issue Context',
-    `The user is creating a PRD based on Jira issue ${issue.key}.`,
     '',
-    '## Issue Details',
+    '## Source Issue',
     `- **Key:** ${issue.key}`,
     `- **Summary:** ${issue.summary}`,
     `- **Type:** ${issue.type}`,
@@ -429,7 +451,7 @@ function buildJiraIssueContext(issue: JiraIssue): string {
   }
 
   if (issue.acceptanceCriteria) {
-    parts.push('', '## Acceptance Criteria', issue.acceptanceCriteria);
+    parts.push('', '## Acceptance Criteria from Jira', issue.acceptanceCriteria);
   }
 
   if (issue.linkedIssues && issue.linkedIssues.length > 0) {
@@ -444,11 +466,32 @@ function buildJiraIssueContext(issue: JiraIssue): string {
 
   parts.push(
     '',
-    '## Instructions',
-    'Use this Jira issue context as the foundation for the PRD.',
-    'The PRD should address the requirements in this issue.',
-    'If the user says "go" or "generate", create the PRD based on the Jira issue details.',
-    'Ask clarifying questions only if critical information is missing.'
+    '## CRITICAL INSTRUCTIONS',
+    '',
+    'When the user says "go", "generate", or similar, you MUST:',
+    '',
+    '1. Create a PRD with user stories derived from this Jira issue',
+    '2. Break down the Jira ticket into multiple user stories (US-001, US-002, etc.)',
+    '3. Each user story MUST follow this EXACT format:',
+    '',
+    '```',
+    '### US-001: Story Title',
+    '',
+    'As a [user type], I want [goal] so that [benefit].',
+    '',
+    '**Acceptance Criteria:**',
+    '- [ ] First testable criterion',
+    '- [ ] Second testable criterion',
+    '- [ ] Third testable criterion',
+    '',
+    '**Priority:** P1',
+    '```',
+    '',
+    '4. Convert the Jira acceptance criteria into checklist format (- [ ] item)',
+    '5. If the Jira ticket lacks detail, create reasonable user stories based on the summary',
+    '6. Wrap the complete PRD in [PRD]...[/PRD] markers',
+    '',
+    'DO NOT just copy the Jira ticket - transform it into proper user stories!'
   );
 
   return parts.join('\n');

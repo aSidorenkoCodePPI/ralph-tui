@@ -1,6 +1,6 @@
 {
   "name": "@asidorenkocodeppi/ralph-tui",
-  "version": "0.1.10",
+  "version": "0.1.15",
   "publishConfig": {
     "access": "public"
   },
@@ -15,7 +15,7 @@
     }
   },
   "bin": {
-    "ralph-tui": "./dist/cli.js"
+    "ralph-tui": "dist/cli.js"
   },
   "scripts": {
     "build": "bun run build:cli && bun run build:lib && bun run build:assets",
@@ -28,16 +28,13 @@
     "lint:fix": "eslint src/ --fix",
     "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
     "dev": "bun run ./src/cli.tsx",
-    "prepublishOnly": "bun run build",
-    "website:dev": "cd website && bun run dev",
-    "website:build": "cd website && bun run build",
-    "website:lint": "cd website && bun run lint"
+    "prepublishOnly": "bun run build"
   },
-"author": "subsy",
+  "author": "subsy",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aSidorenkoCodePPI/ralph-tui.git"
+    "url": "git+https://github.com/aSidorenkoCodePPI/ralph-tui.git"
   },
   "homepage": "https://github.com/aSidorenkoCodePPI/ralph-tui",
   "bugs": {

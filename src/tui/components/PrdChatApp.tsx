@@ -134,12 +134,12 @@ function buildInitialMessages(jiraIssue?: JiraIssue): ChatMessage[] {
 
   contextParts.push(
     '',
-    'I have this context from Jira. Would you like me to generate a PRD based on this issue, or would you like to add more details first?',
+    'I will break this Jira ticket into user stories (US-001, US-002, etc.) with proper acceptance criteria checklists.',
     '',
     'You can:',
-    '- Type "go" or "generate" to create the PRD now',
-    '- Add more context or requirements in your message',
-    '- Ask me questions about the PRD structure'
+    '- Type **"go"** to generate the PRD now',
+    '- Add more context or requirements first',
+    '- Ask me to focus on specific aspects'
   );
 
   const welcomeWithJira: ChatMessage = {

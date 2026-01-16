@@ -41,8 +41,10 @@ export interface ParseOptions {
 
 /**
  * Pattern to match user story headers: ### US-001: Title or ## US-001: Title
+ * Also matches Jira-style keys like TPH-123, PROJ-456, etc.
+ * Also matches simple numbered stories like ### 1: Title or ### Story 1: Title
  */
-const USER_STORY_HEADER_PATTERN = /^#{2,3}\s+(US-\d{3}|[A-Z]+-\d+):\s*(.+)$/;
+const USER_STORY_HEADER_PATTERN = /^#{2,3}\s+(US-\d{3}|[A-Z]{2,10}-\d+|Story\s*\d+|\d+):\s*(.+)$/i;
 
 /**
  * Pattern to match PRD title from first H1
@@ -60,9 +62,10 @@ const BRANCH_NAME_PATTERN = /^>\s*Branch:\s*`?([^`\n]+)`?/m;
 const CREATED_DATE_PATTERN = /^>\s*Generated:\s*(.+)$/m;
 
 /**
- * Pattern to match acceptance criteria section
+ * Pattern to match acceptance criteria section header
+ * Handles various formats: **Acceptance Criteria:**, Acceptance Criteria:, ## Acceptance Criteria
  */
-const ACCEPTANCE_CRITERIA_PATTERN = /\*\*Acceptance Criteria:\*\*|^Acceptance Criteria:$/m;
+const ACCEPTANCE_CRITERIA_PATTERN = /\*\*Acceptance Criteria[:\*]*\*?\*?|^#{1,3}\s*Acceptance Criteria:?$|^Acceptance Criteria:$/im;
 
 /**
  * Pattern to match priority line
@@ -75,9 +78,9 @@ const PRIORITY_PATTERN = /\*\*Priority:\*\*\s*P?(\d)/;
 const DEPENDS_ON_PATTERN = /\*\*Depends on:\*\*\s*(.+)/;
 
 /**
- * Pattern to match checklist items: - [ ] or - [x]
+ * Pattern to match checklist items: - [ ] or - [x] or * [ ] or * [x]
  */
-const CHECKLIST_ITEM_PATTERN = /^-\s+\[[\sx]\]\s+(.+)$/;
+const CHECKLIST_ITEM_PATTERN = /^[-*]\s+\[[\sx]\]\s+(.+)$/;
 
 /**
  * Extract the PRD title from the document.
