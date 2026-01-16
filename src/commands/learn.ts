@@ -3982,19 +3982,30 @@ export async function executeWorkersWithTui(
 
 /**
  * Print dry-run result showing the planned split without executing workers.
+ * Saves to file if --output is specified.
  */
 function printDryRunResult(result: LearnResult, args: LearnArgs): void {
-  // JSON output mode for dry-run
+  // Build the dry-run output object for JSON/file output
+  const dryRunOutput = {
+    dryRun: true,
+    strategy: result.strategy || args.strategy,
+    path: result.rootPath,
+    totalFiles: result.totalFiles,
+    totalDirectories: result.totalDirectories,
+    projectTypes: result.projectTypes,
+    plan: result.masterAgentPlan,
+  };
+
+  // Save to file if --output is specified (AC6: Plan can be saved to file with --dry-run --output plan.json)
+  if (args.output) {
+    const jsonContent = JSON.stringify(dryRunOutput, null, 2);
+    fs.writeFileSync(args.output, jsonContent, 'utf-8');
+    console.log(`\n✓ Dry-run plan saved to: ${args.output}\n`);
+    return;
+  }
+
+  // JSON output mode for dry-run (to stdout)
   if (args.json) {
-    const dryRunOutput = {
-      dryRun: true,
-      strategy: result.strategy || args.strategy,
-      path: result.rootPath,
-      totalFiles: result.totalFiles,
-      totalDirectories: result.totalDirectories,
-      projectTypes: result.projectTypes,
-      plan: result.masterAgentPlan,
-    };
     console.log(JSON.stringify(dryRunOutput, null, 2));
     return;
   }
