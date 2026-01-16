@@ -119,6 +119,12 @@ export interface WorkerProgressState {
   
   /** Peak CPU usage percentage */
   peakCpuPercent?: number;
+  
+  /** Index of the currently selected worker for navigation (0-based) */
+  selectedWorkerIndex: number;
+  
+  /** Whether focus mode is enabled (shows only selected worker's output) */
+  focusMode: boolean;
 }
 
 /**
@@ -313,6 +319,8 @@ export function createWorkerProgressState(workers: WorkerState[]): WorkerProgres
     verboseMode: false,
     progressPercent: 0,
     elapsedMs: 0,
+    selectedWorkerIndex: 0,
+    focusMode: false,
   };
 }
 

@@ -69,6 +69,10 @@ export function WorkerProgressApp({
   const [peakCpuPercent, setPeakCpuPercent] = useState<number | undefined>(undefined);
   const [startedAt, setStartedAt] = useState<string | undefined>(undefined);
   
+  // Navigation state (US-005)
+  const [selectedWorkerIndex, setSelectedWorkerIndex] = useState(0);
+  const [focusMode, setFocusMode] = useState(false);
+  
   // Dialog state
   const [showQuitDialog, setShowQuitDialog] = useState(false);
   
@@ -103,6 +107,8 @@ export function WorkerProgressApp({
     elapsedMs,
     peakMemoryMB,
     peakCpuPercent,
+    selectedWorkerIndex,
+    focusMode,
   };
 
   // Start elapsed time timer
@@ -238,9 +244,36 @@ export function WorkerProgressApp({
 
       switch (key.name) {
         case 'q':
+          // Show quit confirmation if workers are still running per AC
+          if (runningCount > 0) {
+            setShowQuitDialog(true);
+          } else {
+            onQuit?.();
+          }
+          break;
+
         case 'escape':
-          // Show quit confirmation
-          setShowQuitDialog(true);
+          // Esc exits focus mode if active, otherwise show quit dialog
+          if (focusMode) {
+            setFocusMode(false);
+          } else {
+            setShowQuitDialog(true);
+          }
+          break;
+
+        case 'return':
+          // Enter toggles focus mode per AC
+          setFocusMode(prev => !prev);
+          break;
+
+        case 'up':
+          // Navigate up in worker list per AC
+          setSelectedWorkerIndex(prev => Math.max(0, prev - 1));
+          break;
+
+        case 'down':
+          // Navigate down in worker list per AC
+          setSelectedWorkerIndex(prev => Math.min(workers.length - 1, prev + 1));
           break;
 
         case 'v':
@@ -260,7 +293,7 @@ export function WorkerProgressApp({
           break;
       }
     },
-    [showQuitDialog, onQuit, onInterrupt]
+    [showQuitDialog, onQuit, onInterrupt, focusMode, runningCount, workers.length]
   );
 
   useKeyboard(handleKeyboard);

@@ -112,20 +112,23 @@ function WorkerRow({
 
 /**
  * Worker list showing all workers with their current status.
+ * Supports keyboard navigation with visual selection highlighting.
  */
 function WorkerList({
   workers,
   maxHeight,
+  selectedIndex,
 }: {
   workers: WorkerState[];
   maxHeight?: number;
+  selectedIndex: number;
 }): ReactNode {
   // Calculate the maximum name width based on longest worker name
   const maxNameWidth = Math.min(25, Math.max(15, ...workers.map(w => w.name.length)));
 
   return (
     <box
-      title="Workers"
+      title="Workers (↑↓ navigate, Enter focus)"
       style={{
         border: true,
         borderColor: colors.border.normal,
@@ -145,10 +148,11 @@ function WorkerList({
         </text>
       </box>
       <scrollbox style={{ flexGrow: 1 }}>
-        {workers.map((worker) => (
+        {workers.map((worker, index) => (
           <WorkerRow
             key={worker.id}
             worker={worker}
+            isSelected={index === selectedIndex}
             maxNameWidth={maxNameWidth}
           />
         ))}
@@ -159,25 +163,35 @@ function WorkerList({
 
 /**
  * Streaming output section showing latest worker output with worker name prefixes.
+ * In focus mode, shows only the selected worker's full streaming output.
  * Format: "[worker-name] Analyzing..."
  */
 function StreamingOutput({
   workers,
   verboseMode,
   maxLines = 10,
+  focusMode,
+  selectedWorkerIndex,
 }: {
   workers: WorkerState[];
   verboseMode: boolean;
   maxLines?: number;
+  focusMode: boolean;
+  selectedWorkerIndex: number;
 }): ReactNode {
-  // Collect output lines from all workers, most recent first
+  // In focus mode, only show selected worker's output
+  const selectedWorker = workers[selectedWorkerIndex];
+  const workersToShow = focusMode && selectedWorker ? [selectedWorker] : workers;
+  
+  // Collect output lines from relevant workers, most recent first
   const outputLines: Array<{ workerId: string; workerName: string; line: string }> = [];
 
-  for (const worker of workers) {
+  for (const worker of workersToShow) {
     if (worker.latestOutput) {
       // Split output into lines and take recent ones
       const lines = worker.latestOutput.split('\n').filter(l => l.trim());
-      const recentLines = verboseMode ? lines : lines.slice(-3);
+      // In focus mode or verbose mode, show more lines
+      const recentLines = (focusMode || verboseMode) ? lines : lines.slice(-3);
       
       for (const line of recentLines) {
         outputLines.push({
@@ -189,15 +203,21 @@ function StreamingOutput({
     }
   }
 
-  // Take most recent lines based on maxLines
-  const displayLines = outputLines.slice(-maxLines);
+  // Take most recent lines based on maxLines (more in focus mode)
+  const linesToShow = focusMode ? maxLines * 3 : maxLines;
+  const displayLines = outputLines.slice(-linesToShow);
+
+  // Build title based on mode
+  const title = focusMode 
+    ? `Focus: ${selectedWorker?.name ?? 'Unknown'} (Enter/Esc to exit)`
+    : `Output ${verboseMode ? '[Verbose]' : ''}`;
 
   return (
     <box
-      title={`Output ${verboseMode ? '[Verbose]' : ''}`}
+      title={title}
       style={{
         border: true,
-        borderColor: colors.border.normal,
+        borderColor: focusMode ? colors.accent.primary : colors.border.normal,
         backgroundColor: colors.bg.tertiary,
         flexGrow: 1,
         flexDirection: 'column',
@@ -205,13 +225,19 @@ function StreamingOutput({
     >
       <scrollbox style={{ flexGrow: 1, padding: 1 }}>
         {displayLines.length === 0 ? (
-          <text fg={colors.fg.muted}>Waiting for worker output...</text>
+          <text fg={colors.fg.muted}>
+            {focusMode 
+              ? `Waiting for output from ${selectedWorker?.name ?? 'worker'}...`
+              : 'Waiting for worker output...'}
+          </text>
         ) : (
           displayLines.map((item, index) => (
             <box key={`${item.workerId}-${index}`} style={{ flexDirection: 'row' }}>
               <text>
-                <span fg={colors.accent.tertiary}>[{truncateText(item.workerName, 15)}]</span>
-                <span fg={colors.fg.secondary}> {item.line}</span>
+                {!focusMode && (
+                  <span fg={colors.accent.tertiary}>[{truncateText(item.workerName, 15)}]</span>
+                )}
+                <span fg={colors.fg.secondary}>{focusMode ? '' : ' '}{item.line}</span>
               </text>
             </box>
           ))
@@ -316,17 +342,22 @@ export function WorkerProgressDashboard({
         />
       </box>
 
-      {/* Worker list */}
-      <WorkerList
-        workers={progressState.workers}
-        maxHeight={workerListHeight}
-      />
+      {/* Worker list - hidden in focus mode to give more space to output */}
+      {!progressState.focusMode && (
+        <WorkerList
+          workers={progressState.workers}
+          maxHeight={workerListHeight}
+          selectedIndex={progressState.selectedWorkerIndex}
+        />
+      )}
 
       {/* Streaming output */}
       <StreamingOutput
         workers={progressState.workers}
         verboseMode={progressState.verboseMode}
         maxLines={progressState.verboseMode ? 20 : 10}
+        focusMode={progressState.focusMode}
+        selectedWorkerIndex={progressState.selectedWorkerIndex}
       />
 
       {/* Resource summary */}
@@ -336,11 +367,24 @@ export function WorkerProgressDashboard({
         elapsedMs={progressState.elapsedMs}
       />
 
-      {/* Keyboard hint */}
-      <box style={{ paddingLeft: 1 }}>
+      {/* Keyboard shortcuts in status bar per AC */}
+      <box style={{ paddingLeft: 1, flexDirection: 'row', gap: 2 }}>
         <text fg={colors.fg.dim}>
-          Press <span fg={colors.accent.primary}>v</span> to toggle verbose mode
-          {progressState.verboseMode && <span fg={colors.status.info}> [ON]</span>}
+          <span fg={colors.accent.primary}>↑↓</span> navigate
+        </text>
+        <text fg={colors.fg.dim}>
+          <span fg={colors.accent.primary}>Enter</span> {progressState.focusMode ? 'exit' : 'focus'}
+        </text>
+        {progressState.focusMode && (
+          <text fg={colors.fg.dim}>
+            <span fg={colors.accent.primary}>Esc</span> exit focus
+          </text>
+        )}
+        <text fg={colors.fg.dim}>
+          <span fg={colors.accent.primary}>v</span> verbose{progressState.verboseMode ? <span fg={colors.status.info}> [ON]</span> : ''}
+        </text>
+        <text fg={colors.fg.dim}>
+          <span fg={colors.accent.primary}>q</span> quit
         </text>
       </box>
     </box>
