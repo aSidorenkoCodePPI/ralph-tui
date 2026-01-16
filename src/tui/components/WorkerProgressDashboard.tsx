@@ -384,6 +384,9 @@ export function WorkerProgressDashboard({
           <span fg={colors.accent.primary}>v</span> verbose{progressState.verboseMode ? <span fg={colors.status.info}> [ON]</span> : ''}
         </text>
         <text fg={colors.fg.dim}>
+          <span fg={colors.accent.primary}>r</span> retry failed
+        </text>
+        <text fg={colors.fg.dim}>
           <span fg={colors.accent.primary}>q</span> quit
         </text>
       </box>

@@ -32,6 +32,8 @@ export interface WorkerProgressAppProps {
   onQuit?: () => Promise<void>;
   /** Callback when interrupt is confirmed */
   onInterrupt?: () => Promise<void>;
+  /** Callback to manually retry all failed workers */
+  onRetryFailed?: () => Promise<void>;
   /** Agent name being used for workers */
   agentName?: string;
   /** Model being used */
@@ -56,6 +58,7 @@ export function WorkerProgressApp({
   onSubscribe,
   onQuit,
   onInterrupt,
+  onRetryFailed,
   agentName = 'copilot',
   currentModel,
 }: WorkerProgressAppProps): ReactNode {
@@ -281,6 +284,16 @@ export function WorkerProgressApp({
           setVerboseMode(prev => !prev);
           break;
 
+        case 'r':
+          // US-006: 'r' keyboard shortcut manually retries all failed workers
+          if (onRetryFailed) {
+            const hasFailedWorkers = workers.some(w => w.status === 'error');
+            if (hasFailedWorkers) {
+              onRetryFailed();
+            }
+          }
+          break;
+
         case 'c':
           // Ctrl+C to interrupt
           if (key.sequence === '\u0003') {
@@ -293,7 +306,7 @@ export function WorkerProgressApp({
           break;
       }
     },
-    [showQuitDialog, onQuit, onInterrupt, focusMode, runningCount, workers.length]
+    [showQuitDialog, onQuit, onInterrupt, onRetryFailed, focusMode, runningCount, workers]
   );
 
   useKeyboard(handleKeyboard);

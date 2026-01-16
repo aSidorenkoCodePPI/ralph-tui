@@ -636,6 +636,9 @@ export interface LearnArgs {
 
   /** Show planned split without executing workers */
   dryRun: boolean;
+
+  /** Maximum retry attempts for failed workers (default: 3) */
+  maxRetries: number;
 }
 
 /**
@@ -809,6 +812,8 @@ Options:
                         domain    - Analyze imports/dependencies to group related code
                         balanced  - Distribute files evenly across workers by count/size
                         auto      - Let the LLM choose the best strategy (default)
+  --retry <N>         Maximum retry attempts for failed workers (default: 3)
+                      Retry delays use exponential backoff: immediate, 5s, 10s
   --dry-run           Show the planned split without executing workers
   --include <pattern> Include paths matching pattern (overrides exclusions)
                       Can be specified multiple times
@@ -969,6 +974,7 @@ export function parseLearnArgs(args: string[]): LearnArgs {
     agent: false,
     strategy: 'auto',
     dryRun: false,
+    maxRetries: 3,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -991,6 +997,18 @@ export function parseLearnArgs(args: string[]): LearnArgs {
       result.agent = true;
     } else if (arg === '--dry-run') {
       result.dryRun = true;
+    } else if (arg === '--retry') {
+      const nextArg = args[++i];
+      if (!nextArg || nextArg.startsWith('-')) {
+        console.error('Error: --retry requires a number argument (e.g., --retry 3)');
+        process.exit(1);
+      }
+      const retryValue = parseInt(nextArg, 10);
+      if (isNaN(retryValue) || retryValue < 0 || retryValue > 10) {
+        console.error(`Error: Invalid retry value '${nextArg}'. Must be a number between 0 and 10.`);
+        process.exit(1);
+      }
+      result.maxRetries = retryValue;
     } else if (arg === '--strategy') {
       const nextArg = args[++i];
       if (!nextArg || nextArg.startsWith('-')) {
@@ -2872,6 +2890,67 @@ async function executeWorker(
 }
 
 /**
+ * Retry delay schedule in milliseconds (exponential backoff).
+ * Attempt 1: immediate (0ms)
+ * Attempt 2: 5 seconds
+ * Attempt 3: 10 seconds
+ */
+const RETRY_DELAYS_MS = [0, 5000, 10000];
+
+/**
+ * Get retry delay for a given attempt (0-indexed).
+ */
+function getRetryDelayMs(attempt: number): number {
+  if (attempt < RETRY_DELAYS_MS.length) {
+    return RETRY_DELAYS_MS[attempt];
+  }
+  // For attempts beyond the defined delays, use the last delay
+  return RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
+}
+
+/**
+ * Execute a worker with retry logic.
+ * Failed workers automatically retry with exponential backoff.
+ */
+async function executeWorkerWithRetry(
+  group: FolderGrouping,
+  rootPath: string,
+  maxRetries: number,
+  verbose: boolean,
+  onRetry?: (attempt: number, maxRetries: number, delayMs: number, previousError: string) => void
+): Promise<WorkerResult> {
+  let lastResult: WorkerResult | null = null;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // Apply delay for retry attempts (not first attempt)
+    if (attempt > 0) {
+      const delayMs = getRetryDelayMs(attempt - 1);
+      if (onRetry) {
+        onRetry(attempt, maxRetries, delayMs, lastResult?.error ?? 'Unknown error');
+      }
+      if (delayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+    
+    const result = await executeWorker(group, rootPath, verbose);
+    lastResult = result;
+    
+    if (result.success) {
+      return result;
+    }
+    
+    // If this was the last attempt, return the failed result
+    if (attempt === maxRetries) {
+      return result;
+    }
+  }
+  
+  // Should never reach here, but return last result for safety
+  return lastResult!;
+}
+
+/**
  * Execute all workers in parallel and monitor resources.
  * All workers spawn immediately after master agent completes.
  */
@@ -2879,7 +2958,8 @@ export async function executeWorkersInParallel(
   plan: MasterAgentPlan,
   rootPath: string,
   quiet: boolean = false,
-  verbose: boolean = false
+  verbose: boolean = false,
+  maxRetries: number = 3
 ): Promise<WorkerExecutionSummary> {
   const startedAt = new Date();
   const resourceSnapshots: ResourceSnapshot[] = [];
@@ -2920,8 +3000,20 @@ export async function executeWorkersInParallel(
     // AC2: Each worker runs copilot -p with its assigned folder context
     // AC3: Workers operate independently without blocking each other
     // AC4: Worker count matches the number of folder groups from master plan
+    // US-006: Failed workers automatically retry with exponential backoff
     const workerPromises = plan.groupings.map(group => 
-      executeWorker(group, rootPath, verbose)
+      executeWorkerWithRetry(
+        group,
+        rootPath,
+        maxRetries,
+        verbose,
+        (attempt, maxRet, delayMs, prevError) => {
+          if (!quiet) {
+            const delaySec = (delayMs / 1000).toFixed(0);
+            console.log(`\n↻ ${group.name}: Retry ${attempt}/${maxRet} in ${delaySec}s (${prevError})`);
+          }
+        }
+      )
     );
     
     // Wait for all workers to complete in parallel
@@ -3030,6 +3122,20 @@ function printWorkerResults(summary: WorkerExecutionSummary, verbose: boolean): 
     }
     console.log('');
   }
+  
+  // US-006: Show failed folders with warning message
+  const failedWorkers = summary.workers.filter(w => !w.success);
+  if (failedWorkers.length > 0) {
+    console.log('  ⚠️  Warning: Some workers failed after all retries');
+    console.log('  Failed folder groups:');
+    for (const worker of failedWorkers) {
+      console.log(`    ✗ ${worker.groupName}: ${worker.folders.join(', ')}`);
+      if (worker.error) {
+        console.log(`      Reason: ${worker.error}`);
+      }
+    }
+    console.log('');
+  }
 }
 
 /**
@@ -3039,11 +3145,13 @@ function printWorkerResults(summary: WorkerExecutionSummary, verbose: boolean): 
  * 
  * @param plan - Master agent plan containing folder groupings
  * @param rootPath - Root path of the project
+ * @param maxRetries - Maximum retry attempts for failed workers (default: 3)
  * @returns Worker execution summary
  */
 export async function executeWorkersWithTui(
   plan: MasterAgentPlan,
   rootPath: string,
+  maxRetries: number = 3,
 ): Promise<WorkerExecutionSummary> {
   // Dynamic import to avoid loading TUI modules when not needed
   const { createCliRenderer } = await import('@opentui/core');
@@ -3137,7 +3245,8 @@ export async function executeWorkersWithTui(
   );
 
   // Execute workers in parallel with event emission
-  const executeWorkerWithEvents = async (group: FolderGrouping): Promise<WorkerResult> => {
+  // Inner function to execute a single worker attempt (without retry)
+  const executeSingleWorkerAttempt = async (group: FolderGrouping): Promise<WorkerResult> => {
     const workerStartedAt = new Date();
     
     // Emit started event
@@ -3212,15 +3321,6 @@ export async function executeWorkersWithTui(
           completedAt: completedAt.toISOString(),
         };
         
-        // Emit error event
-        emit({
-          type: 'worker:error',
-          timestamp: completedAt.toISOString(),
-          workerId: group.name,
-          error: error.message,
-          durationMs: result.durationMs,
-        });
-        
         resolve(result);
       });
       
@@ -3239,24 +3339,6 @@ export async function executeWorkersWithTui(
           completedAt: completedAt.toISOString(),
         };
         
-        // Emit complete or error event
-        if (result.success) {
-          emit({
-            type: 'worker:complete',
-            timestamp: completedAt.toISOString(),
-            workerId: group.name,
-            durationMs: result.durationMs,
-          });
-        } else {
-          emit({
-            type: 'worker:error',
-            timestamp: completedAt.toISOString(),
-            workerId: group.name,
-            error: result.error ?? 'Unknown error',
-            durationMs: result.durationMs,
-          });
-        }
-        
         resolve(result);
       });
       
@@ -3274,6 +3356,62 @@ export async function executeWorkersWithTui(
         clearTimeout(timeoutId);
       });
     });
+  };
+
+  // Execute a worker with retry logic - US-006 implementation
+  const executeWorkerWithEvents = async (group: FolderGrouping): Promise<WorkerResult> => {
+    let lastResult: WorkerResult | null = null;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      // Apply delay for retry attempts (not first attempt)
+      if (attempt > 0) {
+        const delayMs = getRetryDelayMs(attempt - 1);
+        
+        // Emit retrying event for TUI - shows '↻ retry 2/3'
+        emit({
+          type: 'worker:retrying',
+          timestamp: new Date().toISOString(),
+          workerId: group.name,
+          retryAttempt: attempt,
+          maxRetries: maxRetries,
+          delayMs: delayMs,
+          previousError: lastResult?.error ?? 'Unknown error',
+        });
+        
+        if (delayMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+      
+      const result = await executeSingleWorkerAttempt(group);
+      lastResult = result;
+      
+      if (result.success) {
+        // Emit complete event
+        emit({
+          type: 'worker:complete',
+          timestamp: new Date().toISOString(),
+          workerId: group.name,
+          durationMs: result.durationMs,
+        });
+        return result;
+      }
+      
+      // If this was the last attempt, emit error and return
+      if (attempt === maxRetries) {
+        emit({
+          type: 'worker:error',
+          timestamp: new Date().toISOString(),
+          workerId: group.name,
+          error: result.error ?? 'Unknown error',
+          durationMs: result.durationMs,
+        });
+        return result;
+      }
+    }
+    
+    // Should never reach here, but return last result for safety
+    return lastResult!;
   };
 
   // Execute all workers in parallel
@@ -3672,7 +3810,8 @@ export async function executeLearnCommand(args: string[]): Promise<void> {
           result.masterAgentPlan,
           parsedArgs.path,
           parsedArgs.quiet || parsedArgs.json,
-          parsedArgs.verbose
+          parsedArgs.verbose,
+          parsedArgs.maxRetries
         );
         
         // Attach worker results to the result object
