@@ -11,8 +11,9 @@
  * - ✓ complete: Finished successfully
  * - ✗ error: Failed with error
  * - ↻ retrying: Retrying after failure
+ * - ⏹ canceling: Being terminated due to user cancellation
  */
-export type WorkerStatus = 'queued' | 'running' | 'complete' | 'error' | 'retrying';
+export type WorkerStatus = 'queued' | 'running' | 'complete' | 'error' | 'retrying' | 'canceling';
 
 /**
  * Status indicator icons for worker display.
@@ -23,6 +24,7 @@ export const workerStatusIndicators: Record<WorkerStatus, string> = {
   complete: '✓',
   error: '✗',
   retrying: '↻',
+  canceling: '⏹',
 };
 
 /**
@@ -34,6 +36,7 @@ export const workerStatusColors: Record<WorkerStatus, string> = {
   complete: '#9ece6a', // green
   error: '#f7768e',    // red
   retrying: '#e0af68', // yellow/warning
+  canceling: '#bb9af7', // purple
 };
 
 /**
@@ -137,8 +140,10 @@ export type WorkerEventType =
   | 'worker:complete'
   | 'worker:error'
   | 'worker:retrying'
+  | 'worker:canceling'
   | 'workers:progress'
   | 'workers:all-complete'
+  | 'workers:canceling'
   | 'merge:started'
   | 'merge:progress'
   | 'merge:complete'
@@ -316,6 +321,26 @@ export interface MergeErrorEvent extends WorkerEventBase {
 }
 
 /**
+ * Worker canceling event - worker is being terminated due to user cancellation.
+ */
+export interface WorkerCancelingEvent extends WorkerEventBase {
+  type: 'worker:canceling';
+  /** Worker ID */
+  workerId: string;
+}
+
+/**
+ * Workers canceling event - graceful shutdown initiated.
+ */
+export interface WorkersCancelingEvent extends WorkerEventBase {
+  type: 'workers:canceling';
+  /** Number of running workers being terminated */
+  runningCount: number;
+  /** Total number of workers */
+  totalCount: number;
+}
+
+/**
  * Union of all worker events.
  */
 export type WorkerEvent =
@@ -325,8 +350,10 @@ export type WorkerEvent =
   | WorkerCompleteEvent
   | WorkerErrorEvent
   | WorkerRetryingEvent
+  | WorkerCancelingEvent
   | WorkersProgressEvent
   | WorkersAllCompleteEvent
+  | WorkersCancelingEvent
   | MergeStartedEvent
   | MergeProgressEvent
   | MergeCompleteEvent

@@ -8,7 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 
 // Type-only imports for TUI worker types (used in executeWorkersWithTui)
 import type { 
@@ -556,6 +556,8 @@ export interface WorkerResult {
   startedAt: string;
   /** Timestamp when worker completed (ISO 8601) */
   completedAt: string;
+  /** Whether the worker was canceled (graceful shutdown) */
+  canceled?: boolean;
 }
 
 /**
@@ -3568,15 +3570,75 @@ export async function executeWorkersWithTui(
   });
   const root = createRoot(renderer);
 
-  // Track worker results and quit handler
+  // Track worker results and active processes for graceful cancellation
   let workerResults: WorkerResult[] = [];
+  const activeProcesses: Map<string, ChildProcess> = new Map();
+  let isCanceling = false;
 
+  /**
+   * Terminate all running worker processes gracefully.
+   * Sends SIGTERM first, then SIGKILL after timeout.
+   */
+  const terminateAllWorkers = async (): Promise<void> => {
+    const runningWorkers = [...activeProcesses.entries()];
+    
+    // Emit canceling event for each running worker
+    for (const [workerId] of runningWorkers) {
+      emit({
+        type: 'worker:canceling',
+        timestamp: new Date().toISOString(),
+        workerId,
+      });
+    }
+    
+    // Send SIGTERM to all processes
+    for (const [, proc] of runningWorkers) {
+      if (!proc.killed) {
+        proc.kill('SIGTERM');
+      }
+    }
+    
+    // Wait a bit for graceful shutdown
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Force kill any remaining processes
+    for (const [, proc] of runningWorkers) {
+      if (!proc.killed) {
+        proc.kill('SIGKILL');
+      }
+    }
+    
+    activeProcesses.clear();
+  };
+
+  /**
+   * Handle graceful cancellation.
+   * Shows 'Canceling...' status, terminates workers, preserves partial outputs.
+   */
   const handleQuit = async (): Promise<void> => {
-    // Cleanup - execution will be interrupted by setting a flag
+    if (isCanceling) return; // Prevent double-cancellation
+    isCanceling = true;
+    
+    // Emit workers:canceling event for TUI to show 'Canceling...' status
+    const runningCount = activeProcesses.size;
+    emit({
+      type: 'workers:canceling',
+      timestamp: new Date().toISOString(),
+      runningCount,
+      totalCount: plan.groupings.length,
+    });
+    
+    // Terminate all running workers
+    await terminateAllWorkers();
+    
+    // Cleanup
     clearInterval(monitoringInterval);
     renderer.destroy();
-    // Throw to signal interruption - caller will catch and handle
-    throw new Error('Worker execution interrupted by user');
+    
+    // Throw custom error to signal cancellation (not failure)
+    const cancelError = new Error('Analysis canceled by user');
+    (cancelError as Error & { canceled: boolean }).canceled = true;
+    throw cancelError;
   };
 
   // Render the TUI
@@ -3592,6 +3654,22 @@ export async function executeWorkersWithTui(
   // Execute workers in parallel with event emission
   // Inner function to execute a single worker attempt (without retry)
   const executeSingleWorkerAttempt = async (group: FolderGrouping): Promise<WorkerResult> => {
+    // Check if cancellation is in progress
+    if (isCanceling) {
+      return {
+        groupName: group.name,
+        folders: group.folders,
+        success: false,
+        durationMs: 0,
+        stdout: '',
+        stderr: '',
+        error: 'Canceled before starting',
+        canceled: true,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+    }
+
     const workerStartedAt = new Date();
     
     // Emit started event
@@ -3617,8 +3695,12 @@ export async function executeWorkersWithTui(
         shell: true,
       });
       
+      // Track this process for graceful cancellation
+      activeProcesses.set(group.name, proc);
+      
       let stdout = '';
       let stderr = '';
+      let wasCanceledDuringExecution = false;
       
       proc.stdout?.on('data', (data: Buffer) => {
         const chunk = data.toString();
@@ -3653,6 +3735,7 @@ export async function executeWorkersWithTui(
       proc.stdin?.end();
       
       proc.on('error', (error) => {
+        activeProcesses.delete(group.name);
         const completedAt = new Date();
         const result: WorkerResult = {
           groupName: group.name,
@@ -3669,17 +3752,25 @@ export async function executeWorkersWithTui(
         resolve(result);
       });
       
-      proc.on('close', (code) => {
+      proc.on('close', (code, signal) => {
+        activeProcesses.delete(group.name);
         const completedAt = new Date();
+        
+        // Check if worker was terminated due to cancellation
+        wasCanceledDuringExecution = isCanceling || signal === 'SIGTERM' || signal === 'SIGKILL';
+        
         const result: WorkerResult = {
           groupName: group.name,
           folders: group.folders,
-          success: code === 0,
+          success: code === 0 && !wasCanceledDuringExecution,
           durationMs: completedAt.getTime() - workerStartedAt.getTime(),
           stdout,
           stderr,
           exitCode: code ?? undefined,
-          error: code !== 0 ? `Worker exited with code ${code}` : undefined,
+          error: wasCanceledDuringExecution 
+            ? 'Worker canceled' 
+            : (code !== 0 ? `Worker exited with code ${code}` : undefined),
+          canceled: wasCanceledDuringExecution,
           startedAt: workerStartedAt.toISOString(),
           completedAt: completedAt.toISOString(),
         };
@@ -4296,6 +4387,21 @@ export async function executeLearnCommand(args: string[]): Promise<void> {
           }
         }
       } catch (workerError) {
+        // US-009: Check if this was a user cancellation
+        const isCancellation = workerError instanceof Error && 
+          ((workerError as Error & { canceled?: boolean }).canceled === true ||
+           workerError.message.includes('canceled'));
+        
+        if (isCancellation) {
+          // US-009 AC6: Exit message indicates analysis was canceled, not failed
+          if (!parsedArgs.quiet && !parsedArgs.json) {
+            console.log('\n⏹️  Analysis canceled by user.');
+            console.log('   All running workers have been terminated.');
+          }
+          // US-009 AC4: Partial outputs are preserved - exit cleanly
+          process.exit(0);
+        }
+        
         if (!parsedArgs.quiet && !parsedArgs.json) {
           console.error(`\n⚠️  Worker execution failed: ${workerError instanceof Error ? workerError.message : String(workerError)}`);
         }

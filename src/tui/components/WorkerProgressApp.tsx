@@ -226,6 +226,24 @@ export function WorkerProgressApp({
           ));
           break;
 
+        case 'worker:canceling':
+          // US-009: Show 'canceling' status for individual worker
+          setWorkers(prev => prev.map(w => 
+            w.id === event.workerId 
+              ? { ...w, status: 'canceling' }
+              : w
+          ));
+          break;
+
+        case 'workers:canceling':
+          // US-009: Show 'Canceling...' for all running workers
+          setWorkers(prev => prev.map(w => 
+            w.status === 'running' || w.status === 'retrying'
+              ? { ...w, status: 'canceling' }
+              : w
+          ));
+          break;
+
         case 'workers:progress':
           setPeakMemoryMB(prev => 
             event.memoryMB && (!prev || event.memoryMB > prev) ? event.memoryMB : prev
