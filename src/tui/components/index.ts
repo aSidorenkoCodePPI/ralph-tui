@@ -38,3 +38,7 @@ export { IssueSelectionView } from './IssueSelectionView.js';
 export type { IssueSelectionViewProps, JiraIssueWithPriority } from './IssueSelectionView.js';
 export { IssueSelectionApp } from './IssueSelectionApp.js';
 export type { IssueSelectionAppProps } from './IssueSelectionApp.js';
+export { WorkerProgressDashboard } from './WorkerProgressDashboard.js';
+export type { WorkerProgressDashboardProps } from './WorkerProgressDashboard.js';
+export { WorkerProgressApp } from './WorkerProgressApp.js';
+export type { WorkerProgressAppProps } from './WorkerProgressApp.js';

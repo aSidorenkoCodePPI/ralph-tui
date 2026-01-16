@@ -10,6 +10,13 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { spawn } from 'node:child_process';
 
+// Type-only imports for TUI worker types (used in executeWorkersWithTui)
+import type { 
+  WorkerState, 
+  WorkerEvent, 
+  WorkerEventListener 
+} from '../tui/worker-types.js';
+
 /**
  * Binary file extensions to automatically exclude
  */
@@ -3022,6 +3029,304 @@ function printWorkerResults(summary: WorkerExecutionSummary, verbose: boolean): 
       }
     }
     console.log('');
+  }
+}
+
+/**
+ * Execute workers with TUI progress display.
+ * Provides real-time visual feedback with worker status icons, progress bar,
+ * streaming output with worker prefixes, and verbose mode toggle.
+ * 
+ * @param plan - Master agent plan containing folder groupings
+ * @param rootPath - Root path of the project
+ * @returns Worker execution summary
+ */
+export async function executeWorkersWithTui(
+  plan: MasterAgentPlan,
+  rootPath: string,
+): Promise<WorkerExecutionSummary> {
+  // Dynamic import to avoid loading TUI modules when not needed
+  const { createCliRenderer } = await import('@opentui/core');
+  const { createRoot } = await import('@opentui/react');
+  const { WorkerProgressApp } = await import('../tui/components/WorkerProgressApp.js');
+  const { createWorkerState } = await import('../tui/worker-types.js');
+  const React = await import('react');
+
+  // Initialize worker states from plan groupings
+  const initialWorkers: WorkerState[] = plan.groupings.map(group => 
+    createWorkerState(
+      group.name,
+      group.name,
+      group.folders.length,
+      0 // File count - we could calculate this but keeping simple for now
+    )
+  );
+
+  // Event listeners for real-time updates
+  const listeners: Set<WorkerEventListener> = new Set();
+  
+  const emit = (event: WorkerEvent): void => {
+    for (const listener of listeners) {
+      listener(event);
+    }
+  };
+
+  const subscribe = (listener: WorkerEventListener): (() => void) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  };
+
+  // Track worker execution
+  const startedAt = new Date();
+  const resourceSnapshots: ResourceSnapshot[] = [];
+  let peakMemoryMB = 0;
+  let peakCpuPercent = 0;
+
+  // Start resource monitoring
+  const monitoringInterval = setInterval(() => {
+    const usage = getResourceUsage();
+    resourceSnapshots.push({
+      timestamp: new Date().toISOString(),
+      cpuPercent: usage.cpuPercent,
+      memoryMB: usage.memoryMB,
+      activeWorkers: plan.groupings.length,
+    });
+    
+    if (usage.memoryMB > peakMemoryMB) peakMemoryMB = usage.memoryMB;
+    if (usage.cpuPercent > peakCpuPercent) peakCpuPercent = usage.cpuPercent;
+
+    // Emit progress event for TUI updates
+    emit({
+      type: 'workers:progress',
+      timestamp: new Date().toISOString(),
+      completedCount: 0, // Will be updated by individual worker events
+      runningCount: plan.groupings.length,
+      totalCount: plan.groupings.length,
+      progressPercent: 0,
+      elapsedMs: Date.now() - startedAt.getTime(),
+      memoryMB: usage.memoryMB,
+      cpuPercent: usage.cpuPercent,
+    });
+  }, 1000);
+
+  // Create and render TUI
+  const renderer = await createCliRenderer({
+    exitOnCtrlC: false,
+  });
+  const root = createRoot(renderer);
+
+  // Track worker results and quit handler
+  let workerResults: WorkerResult[] = [];
+
+  const handleQuit = async (): Promise<void> => {
+    // Cleanup - execution will be interrupted by setting a flag
+    clearInterval(monitoringInterval);
+    renderer.destroy();
+    // Throw to signal interruption - caller will catch and handle
+    throw new Error('Worker execution interrupted by user');
+  };
+
+  // Render the TUI
+  root.render(
+    React.createElement(WorkerProgressApp, {
+      initialWorkers,
+      onSubscribe: subscribe,
+      onQuit: handleQuit,
+      onInterrupt: handleQuit,
+    })
+  );
+
+  // Execute workers in parallel with event emission
+  const executeWorkerWithEvents = async (group: FolderGrouping): Promise<WorkerResult> => {
+    const workerStartedAt = new Date();
+    
+    // Emit started event
+    emit({
+      type: 'worker:started',
+      timestamp: workerStartedAt.toISOString(),
+      workerId: group.name,
+    });
+
+    const prompt = buildWorkerPrompt(group, rootPath);
+    
+    return new Promise((resolve) => {
+      const args = [
+        '--silent',
+        '--stream', 'off',
+        '--allow-all-tools',
+      ];
+      
+      const proc = spawn('copilot', args, {
+        cwd: rootPath,
+        env: { ...process.env },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true,
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      proc.stdout?.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        stdout += chunk;
+        
+        // Emit output event for TUI streaming display
+        emit({
+          type: 'worker:output',
+          timestamp: new Date().toISOString(),
+          workerId: group.name,
+          data: chunk,
+          stream: 'stdout',
+        });
+      });
+      
+      proc.stderr?.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        stderr += chunk;
+        
+        // Emit output event for TUI streaming display
+        emit({
+          type: 'worker:output',
+          timestamp: new Date().toISOString(),
+          workerId: group.name,
+          data: chunk,
+          stream: 'stderr',
+        });
+      });
+      
+      // Write the prompt to stdin
+      proc.stdin?.write(prompt);
+      proc.stdin?.end();
+      
+      proc.on('error', (error) => {
+        const completedAt = new Date();
+        const result: WorkerResult = {
+          groupName: group.name,
+          folders: group.folders,
+          success: false,
+          durationMs: completedAt.getTime() - workerStartedAt.getTime(),
+          stdout,
+          stderr,
+          error: `Failed to execute worker: ${error.message}`,
+          startedAt: workerStartedAt.toISOString(),
+          completedAt: completedAt.toISOString(),
+        };
+        
+        // Emit error event
+        emit({
+          type: 'worker:error',
+          timestamp: completedAt.toISOString(),
+          workerId: group.name,
+          error: error.message,
+          durationMs: result.durationMs,
+        });
+        
+        resolve(result);
+      });
+      
+      proc.on('close', (code) => {
+        const completedAt = new Date();
+        const result: WorkerResult = {
+          groupName: group.name,
+          folders: group.folders,
+          success: code === 0,
+          durationMs: completedAt.getTime() - workerStartedAt.getTime(),
+          stdout,
+          stderr,
+          exitCode: code ?? undefined,
+          error: code !== 0 ? `Worker exited with code ${code}` : undefined,
+          startedAt: workerStartedAt.toISOString(),
+          completedAt: completedAt.toISOString(),
+        };
+        
+        // Emit complete or error event
+        if (result.success) {
+          emit({
+            type: 'worker:complete',
+            timestamp: completedAt.toISOString(),
+            workerId: group.name,
+            durationMs: result.durationMs,
+          });
+        } else {
+          emit({
+            type: 'worker:error',
+            timestamp: completedAt.toISOString(),
+            workerId: group.name,
+            error: result.error ?? 'Unknown error',
+            durationMs: result.durationMs,
+          });
+        }
+        
+        resolve(result);
+      });
+      
+      // Timeout after 120 seconds per worker
+      const timeoutId = setTimeout(() => {
+        proc.kill('SIGTERM');
+        setTimeout(() => {
+          if (!proc.killed) {
+            proc.kill('SIGKILL');
+          }
+        }, 5000);
+      }, 120000);
+      
+      proc.on('close', () => {
+        clearTimeout(timeoutId);
+      });
+    });
+  };
+
+  // Execute all workers in parallel
+  try {
+    const workerPromises = plan.groupings.map(group => executeWorkerWithEvents(group));
+    workerResults = await Promise.all(workerPromises);
+    
+    const completedAt = new Date();
+    const totalDurationMs = completedAt.getTime() - startedAt.getTime();
+    
+    // Stop monitoring
+    clearInterval(monitoringInterval);
+    
+    // Calculate statistics
+    const successCount = workerResults.filter(w => w.success).length;
+    const failedCount = workerResults.filter(w => !w.success).length;
+    const sequentialDurationMs = workerResults.reduce((sum, w) => sum + w.durationMs, 0);
+    const speedupFactor = sequentialDurationMs > 0 ? sequentialDurationMs / totalDurationMs : 1;
+
+    // Emit all-complete event
+    emit({
+      type: 'workers:all-complete',
+      timestamp: completedAt.toISOString(),
+      totalCount: plan.groupings.length,
+      successCount,
+      failedCount,
+      totalDurationMs,
+      sequentialDurationMs,
+      speedupFactor,
+    });
+
+    // Wait a bit for TUI to show completion, then cleanup
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    renderer.destroy();
+
+    return {
+      workerCount: plan.groupings.length,
+      successCount,
+      failedCount,
+      totalDurationMs,
+      sequentialDurationMs,
+      speedupFactor,
+      workers: workerResults,
+      resourceSnapshots,
+      peakMemoryMB,
+      peakCpuPercent,
+      startedAt: startedAt.toISOString(),
+      completedAt: completedAt.toISOString(),
+    };
+  } catch (error) {
+    clearInterval(monitoringInterval);
+    renderer.destroy();
+    throw error;
   }
 }
 

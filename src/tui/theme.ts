@@ -61,6 +61,7 @@ export const colors = {
  * Status indicator symbols
  * Task status: ✓ (done), ▶ (active/actionable), ○ (pending), ⊘ (blocked), ✓ (closed - greyed)
  * Ralph status: ▶ (running), ◎ (pausing), ⏸ (paused), ■ (stopped), ✓ (complete), ○ (idle/ready)
+ * Worker status: ○ (queued), ▶ (running), ✓ (complete), ✗ (error), ↻ (retrying)
  */
 export const statusIndicators = {
   done: '✓',
@@ -79,6 +80,12 @@ export const statusIndicators = {
   complete: '✓',
   idle: '○',
   ready: '◉', // Ready to start - waiting for user action
+  // Worker-specific status indicators
+  workerQueued: '○',
+  workerRunning: '▶',
+  workerComplete: '✓',
+  workerError: '✗',
+  workerRetrying: '↻',
 } as const;
 
 /**
@@ -116,7 +123,7 @@ export const fullKeyboardShortcuts = [
   { key: 'l', description: 'Load / switch epic', category: 'Execution' },
   { key: 'd', description: 'Toggle progress dashboard', category: 'Views' },
   { key: 'h', description: 'Toggle show/hide closed tasks', category: 'Views' },
-  { key: 'v', description: 'Toggle iterations / tasks view', category: 'Views' },
+  { key: 'v', description: 'Toggle verbose mode / iterations view', category: 'Views' },
   { key: 'o', description: 'Toggle details / output view', category: 'Views' },
   { key: 't', description: 'Cycle subagent detail level', category: 'Views' },
   { key: 'T', description: 'Toggle subagent tree panel', category: 'Views' },

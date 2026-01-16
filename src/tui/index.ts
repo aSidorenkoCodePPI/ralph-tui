@@ -11,3 +11,6 @@ export * from './theme.js';
 
 // Type definitions
 export * from './types.js';
+
+// Worker progress types
+export * from './worker-types.js';
