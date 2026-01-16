@@ -21,6 +21,7 @@ import {
   executeJiraPrdCommand,
   executeLearnCommand,
 } from './commands/index.js';
+import { checkAndAutoUpdate } from './auto-update.js';
 
 /**
  * Show CLI help message.
@@ -258,6 +259,13 @@ async function handleSubcommand(args: string[]): Promise<boolean> {
 async function main(): Promise<void> {
   // Get command-line arguments (skip node and script path)
   const args = process.argv.slice(2);
+
+  // Check for updates and auto-update if available (skip for help/version commands)
+  const skipUpdateCommands = ['help', '--help', '-h', 'version', '--version', '-v'];
+  if (!skipUpdateCommands.includes(args[0])) {
+    const pkg = await import('../package.json', { with: { type: 'json' } });
+    await checkAndAutoUpdate(pkg.default.version);
+  }
 
   // Handle subcommands
   const handled = await handleSubcommand(args);
