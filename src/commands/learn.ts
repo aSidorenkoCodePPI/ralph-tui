@@ -2377,11 +2377,44 @@ function parseJsonFromOutput(output: string): MasterAgentPlan | null {
     }
   }
   
-  // Try to find JSON object in output
-  const jsonMatch = output.match(/\{[\s\S]*"groupings"[\s\S]*\}/);
+  // Clean up Copilot CLI output formatting:
+  // - Remove bullet points (●, •, -, *)
+  // - Remove leading whitespace from wrapped lines
+  // - Join multi-line JSON back together
+  let cleanedOutput = output
+    // Remove ● or • bullet points at start of lines
+    .replace(/^[●•\-\*]\s*/gm, '')
+    // Remove ✔ checkmarks and tool output headers
+    .replace(/^✔.*$/gm, '')
+    .replace(/^\s*└.*$/gm, '')
+    // Join wrapped lines (lines that start with whitespace and continue JSON)
+    .replace(/\n\s{2,}/g, ' ')
+    // Normalize whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  // Try to find JSON object in cleaned output
+  const jsonMatch = cleanedOutput.match(/\{[^{}]*"groupings"\s*:\s*\[[\s\S]*\]\s*[^{}]*\}/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.groupings && Array.isArray(parsed.groupings)) {
+        return parsed as MasterAgentPlan;
+      }
+    } catch {
+      // Continue to original method
+    }
+  }
+  
+  // Try to find JSON object in raw output (fallback)
+  const rawJsonMatch = output.match(/\{[\s\S]*"groupings"[\s\S]*\}/);
+  if (rawJsonMatch) {
+    // Clean the matched JSON by joining wrapped lines
+    const cleanedJson = rawJsonMatch[0]
+      .replace(/\n\s+/g, ' ')
+      .replace(/\s+/g, ' ');
+    try {
+      const parsed = JSON.parse(cleanedJson);
       if (parsed.groupings && Array.isArray(parsed.groupings)) {
         return parsed as MasterAgentPlan;
       }
