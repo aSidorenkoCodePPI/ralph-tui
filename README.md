@@ -46,13 +46,7 @@ bun install -g @asidorenkocode/loopwright
 
 ### Step 3: Install GitHub Copilot CLI (Default Agent)
 
-```powershell
-# Install
-npm install -g @githubnext/github-copilot-cli
-
-# Authenticate
-gh auth login
-```
+See: https://github.com/github/copilot-cli
 
 ### Verify Installation
 
